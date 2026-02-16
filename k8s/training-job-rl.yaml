@@ -47,10 +47,11 @@ spec:
         app.kubernetes.io/component: rl-head
     spec:
       restartPolicy: OnFailure
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: rl-head
-          # Set this to your registry, e.g.: ghcr.io/<your-username>/loka:rl-train
-          image: ghcr.io/REPLACE_ME/loka:rl-train
+          image: ghcr.io/harshavardhank/loka:rl-train
           imagePullPolicy: Always
           command:
             - /bin/bash
@@ -200,10 +201,11 @@ spec:
         app.kubernetes.io/component: rl-worker
     spec:
       restartPolicy: OnFailure
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: rl-worker
-          # Set this to your registry, e.g.: ghcr.io/<your-username>/loka:rl-train
-          image: ghcr.io/REPLACE_ME/loka:rl-train
+          image: ghcr.io/harshavardhank/loka:rl-train
           imagePullPolicy: Always
           command:
             - /bin/bash

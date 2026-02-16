@@ -18,9 +18,11 @@ spec:
         app.kubernetes.io/name: loka
         app.kubernetes.io/component: inference
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: loka
-          image: loka:inference
+          image: ghcr.io/harshavardhank/loka:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

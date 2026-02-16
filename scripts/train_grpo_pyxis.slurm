@@ -12,7 +12,7 @@
 #
 # --- Pyxis / enroot container ---
 # Set LOKA_CONTAINER_IMAGE in your environment or override here
-#SBATCH --container-image=${LOKA_CONTAINER_IMAGE:-ghcr.io/<your-username>/loka:rl-train}
+#SBATCH --container-image=${LOKA_CONTAINER_IMAGE:-ghcr.io/harshavardhank/loka:rl-train}
 #SBATCH --container-mounts=/scratch:/scratch
 #SBATCH --container-writable
 #SBATCH --no-container-entrypoint
