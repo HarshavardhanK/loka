@@ -1,0 +1,91 @@
+# =============================================================================
+# Verl GRPO Training Configuration — LEO-to-GEO Orbital Transfer
+# =============================================================================
+# Launch with:
+#   python3 -m verl.trainer.main_ppo @configs/grpo_config.yaml
+# or pass individual overrides on the CLI (see scripts/train_grpo.slurm).
+# =============================================================================
+
+# ── Algorithm ─────────────────────────────────────────────────────────
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+
+# ── Data ──────────────────────────────────────────────────────────────
+data:
+  train_files: /data/orbital/train.parquet
+  val_files: /data/orbital/val.parquet
+  train_batch_size: 256
+  max_prompt_length: 512
+  max_response_length: 1024
+  filter_overlong_prompts: true
+  truncation: error
+
+# ── Actor / Rollout / Reference (hybrid engine) ──────────────────────
+actor_rollout_ref:
+  hybrid_engine: true
+
+  model:
+    path: meta-llama/Llama-3.1-8B-Instruct
+    override_config:
+      attn_implementation: flash_attention_2
+    enable_gradient_checkpointing: true
+    use_remove_padding: true
+
+  # Actor (policy)
+  actor:
+    strategy: fsdp2
+    optim:
+      lr: 1.0e-6
+      warmup_style: cosine
+      lr_warmup_steps_ratio: 0.05
+    ppo_mini_batch_size: 128
+    ppo_micro_batch_size_per_gpu: 8
+    ppo_epochs: 1
+    clip_ratio: 0.2
+    grad_clip: 1.0
+    use_kl_loss: true
+    kl_loss_coef: 0.001
+    kl_loss_type: low_var_kl
+    loss_agg_mode: token-mean
+    entropy_coeff: 0.01
+    use_torch_compile: true
+    fsdp_config:
+      param_offload: false
+      optimizer_offload: false
+
+  # Reference model (frozen)
+  ref:
+    strategy: fsdp2
+    fsdp_config:
+      param_offload: false
+    log_prob_micro_batch_size_per_gpu: 16
+
+  # Rollout (vLLM generation)
+  rollout:
+    name: vllm
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.65
+    n: 16               # GRPO group size
+    temperature: 1.0
+    top_p: 0.95
+    log_prob_micro_batch_size_per_gpu: 16
+
+# ── Reward ────────────────────────────────────────────────────────────
+reward_model:
+  enable: false
+
+custom_reward_function:
+  path: src/loka/rl/reward.py
+  name: compute_score
+
+# ── Trainer ───────────────────────────────────────────────────────────
+trainer:
+  n_gpus_per_node: 8
+  nnodes: 2
+  project_name: orbital_rl
+  experiment_name: leo_to_geo_grpo
+  logger: wandb
+  save_freq: 50
+  val_before_train: true
+  total_epochs: 3

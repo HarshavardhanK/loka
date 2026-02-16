@@ -1,0 +1,273 @@
+# =============================================================================
+# Multi-node GRPO training job — 2 nodes × 8 H100 GPUs via Ray + Verl
+# =============================================================================
+# This manifest creates a head pod and a worker pod.  The head bootstraps
+# a Ray cluster, waits for the worker to join, then launches the Verl
+# GRPO trainer.  Both pods request 8 GPUs and 512 Gi memory.
+# =============================================================================
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loka-rl-head-svc
+  namespace: loka
+  labels:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: rl-training
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: rl-head
+  ports:
+    - name: ray-gcs
+      port: 6379
+      targetPort: 6379
+    - name: ray-dashboard
+      port: 8265
+      targetPort: 8265
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loka-rl-head
+  namespace: loka
+  labels:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: rl-training
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 172800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loka
+        app.kubernetes.io/component: rl-head
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: rl-head
+          # Set this to your registry: ghcr.io/OWNER/loka:rl-train
+          image: ghcr.io/OWNER/loka:rl-train
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              # Start Ray head
+              ray start --head --port=6379 \
+                --num-cpus=64 --num-gpus=8 \
+                --dashboard-host=0.0.0.0
+              # Wait for worker to join (timeout 300s)
+              for i in $(seq 1 60); do
+                NODES=$(ray status 2>/dev/null | grep -c "node_" || true)
+                [ "$NODES" -ge 2 ] && break
+                echo "Waiting for worker … ($i/60)"
+                sleep 5
+              done
+              echo "Ray cluster ready — launching GRPO training"
+              python3 -m verl.trainer.main_ppo \
+                algorithm.adv_estimator=grpo \
+                algorithm.use_kl_in_reward=False \
+                data.train_files=/data/orbital/train.parquet \
+                data.val_files=/data/orbital/val.parquet \
+                data.train_batch_size=256 \
+                data.max_prompt_length=512 \
+                data.max_response_length=1024 \
+                data.filter_overlong_prompts=True \
+                data.truncation=error \
+                actor_rollout_ref.hybrid_engine=True \
+                actor_rollout_ref.model.path=meta-llama/Llama-3.1-8B-Instruct \
+                actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2 \
+                actor_rollout_ref.model.enable_gradient_checkpointing=True \
+                actor_rollout_ref.model.use_remove_padding=True \
+                actor_rollout_ref.actor.strategy=fsdp2 \
+                actor_rollout_ref.actor.optim.lr=1e-6 \
+                actor_rollout_ref.actor.optim.warmup_style=cosine \
+                actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.05 \
+                actor_rollout_ref.actor.ppo_mini_batch_size=128 \
+                actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=8 \
+                actor_rollout_ref.actor.ppo_epochs=1 \
+                actor_rollout_ref.actor.clip_ratio=0.2 \
+                actor_rollout_ref.actor.grad_clip=1.0 \
+                actor_rollout_ref.actor.use_kl_loss=True \
+                actor_rollout_ref.actor.kl_loss_coef=0.001 \
+                actor_rollout_ref.actor.kl_loss_type=low_var_kl \
+                actor_rollout_ref.actor.loss_agg_mode=token-mean \
+                actor_rollout_ref.actor.entropy_coeff=0.01 \
+                actor_rollout_ref.actor.use_torch_compile=True \
+                actor_rollout_ref.actor.fsdp_config.param_offload=False \
+                actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
+                actor_rollout_ref.ref.strategy=fsdp2 \
+                actor_rollout_ref.ref.fsdp_config.param_offload=False \
+                actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=16 \
+                actor_rollout_ref.rollout.name=vllm \
+                actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+                actor_rollout_ref.rollout.gpu_memory_utilization=0.65 \
+                actor_rollout_ref.rollout.n=16 \
+                actor_rollout_ref.rollout.temperature=1.0 \
+                actor_rollout_ref.rollout.top_p=0.95 \
+                actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=16 \
+                reward_model.enable=False \
+                custom_reward_function.path=src/loka/rl/reward.py \
+                custom_reward_function.name=compute_score \
+                trainer.n_gpus_per_node=8 \
+                trainer.nnodes=2 \
+                trainer.project_name=orbital_rl \
+                trainer.experiment_name=leo_to_geo_grpo \
+                trainer.logger=wandb \
+                trainer.save_freq=50 \
+                trainer.val_before_train=True \
+                trainer.total_epochs=3
+          env:
+            - name: CUDA_DEVICE_MAX_CONNECTIONS
+              value: "1"
+            - name: NCCL_CROSS_NIC
+              value: "1"
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: TORCH_NCCL_AVOID_RECORD_STREAMS
+              value: "1"
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASH_ATTN"
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: loka-secrets
+                  key: wandb-api-key
+                  optional: true
+          resources:
+            requests:
+              memory: "512Gi"
+              cpu: "64"
+              nvidia.com/gpu: "8"
+            limits:
+              memory: "512Gi"
+              cpu: "64"
+              nvidia.com/gpu: "8"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: models
+              mountPath: /models
+            - name: cache
+              mountPath: /cache
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: loka-data-pvc
+        - name: models
+          persistentVolumeClaim:
+            claimName: loka-models-pvc
+        - name: cache
+          persistentVolumeClaim:
+            claimName: loka-cache-pvc
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loka-rl-worker
+  namespace: loka
+  labels:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: rl-training
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 172800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loka
+        app.kubernetes.io/component: rl-worker
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: rl-worker
+          # Set this to your registry: ghcr.io/OWNER/loka:rl-train
+          image: ghcr.io/OWNER/loka:rl-train
+          imagePullPolicy: Always
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              # Wait for head to be reachable
+              for i in $(seq 1 60); do
+                nc -z loka-rl-head-svc.loka.svc.cluster.local 6379 && break
+                echo "Waiting for head … ($i/60)"
+                sleep 5
+              done
+              # Join Ray cluster
+              ray start \
+                --address=loka-rl-head-svc.loka.svc.cluster.local:6379 \
+                --num-cpus=64 --num-gpus=8 --block
+          env:
+            - name: CUDA_DEVICE_MAX_CONNECTIONS
+              value: "1"
+            - name: NCCL_CROSS_NIC
+              value: "1"
+            - name: NCCL_IB_DISABLE
+              value: "0"
+            - name: TORCH_NCCL_AVOID_RECORD_STREAMS
+              value: "1"
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASH_ATTN"
+            - name: NCCL_DEBUG
+              value: "INFO"
+          resources:
+            requests:
+              memory: "512Gi"
+              cpu: "64"
+              nvidia.com/gpu: "8"
+            limits:
+              memory: "512Gi"
+              cpu: "64"
+              nvidia.com/gpu: "8"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: models
+              mountPath: /models
+            - name: cache
+              mountPath: /cache
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: loka-data-pvc
+        - name: models
+          persistentVolumeClaim:
+            claimName: loka-models-pvc
+        - name: cache
+          persistentVolumeClaim:
+            claimName: loka-cache-pvc
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"

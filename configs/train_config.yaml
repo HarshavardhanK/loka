@@ -1,0 +1,64 @@
+# Loka Training Configuration
+# =============================================================================
+
+# Model
+base_model: "mistralai/Mistral-7B-v0.1"  # Base model for fine-tuning
+model_max_length: 8192
+
+# Training hyperparameters
+num_epochs: 3
+batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 2e-5
+warmup_ratio: 0.1
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+# Precision
+mixed_precision: "fp16"  # Options: fp16, bf16, no
+
+# LoRA configuration (for efficient fine-tuning)
+use_lora: true
+lora_config:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+# Data
+data_path: "data/loka_training"
+max_samples: null  # null for all samples
+validation_split: 0.05
+
+# Tokenizer
+add_special_tokens:
+  - "<|celestial|>"
+  - "<|trajectory|>"
+  - "<|ephemeris|>"
+  - "<|mission|>"
+  - "<|tool_call|>"
+  - "<|tool_result|>"
+
+# Logging
+logging_steps: 10
+eval_steps: 500
+save_steps: 500
+save_total_limit: 3
+report_to:
+  - wandb
+run_name: "loka-v1-training"
+
+# Distributed training
+num_workers: 4
+ddp_find_unused_parameters: false
+
+# Checkpointing
+resume_from_checkpoint: null
+save_safetensors: true

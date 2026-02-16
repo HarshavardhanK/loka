@@ -1,0 +1,110 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loka"
+version = "0.1.0"
+description = "Agentic AI model for astrophysics navigation and trajectory planning"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Loka Team"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["astrophysics", "navigation", "trajectory", "llm", "agent", "astropy"]
+
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.13",
+    "astropy>=6.0,<7",
+    "jplephem>=2.18",
+    "torch>=2.0",
+    "transformers>=4.40",
+    "datasets",
+    "accelerate",
+    "pyyaml>=6.0",
+    "packaging>=25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "black",
+    "ruff",
+    "mypy",
+    "pre-commit",
+]
+rl = [
+    "gymnasium>=1.0",
+    "numba>=0.60",
+    "pandas",
+    "pyarrow",
+    "verl",
+    "vllm",
+    "ray[default]",
+]
+all = [
+    "poliastro",
+    "asdf-astropy>=0.7.0",
+    "wandb",
+    "peft",
+    "bitsandbytes",
+    "matplotlib>=3.9",
+    "ipython>=8.0",
+    "jupyter",
+    "gymnasium>=1.0",
+    "numba>=0.60",
+    "pandas",
+    "pyarrow",
+    "verl",
+    "vllm",
+    "ray[default]",
+]
+
+[project.scripts]
+loka = "loka.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/your-org/loka"
+Documentation = "https://loka.readthedocs.io"
+Repository = "https://github.com/your-org/loka"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # Development environment with Jupyter
+  loka-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: development
+    image: loka:dev
+    container_name: loka-dev
+    volumes:
+      - ../:/app
+      - loka-data:/data
+      - loka-models:/models
+      - loka-cache:/cache
+    ports:
+      - "8888:8888"
+    environment:
+      - LOKA_DATA_DIR=/data
+      - LOKA_MODEL_DIR=/models
+      - LOKA_CACHE_DIR=/cache
+      - WANDB_API_KEY=${WANDB_API_KEY:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - loka-network
+
+  # Inference server
+  loka-serve:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.inference
+    image: loka:inference
+    container_name: loka-serve
+    volumes:
+      - loka-models:/models:ro
+      - loka-data:/data:ro
+    ports:
+      - "8000:8000"
+    environment:
+      - LOKA_MODEL_DIR=/models
+      - LOKA_DATA_DIR=/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - loka-network
+    depends_on:
+      - loka-dev
+    profiles:
+      - serve
+
+  # Training container
+  loka-train:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: training
+    image: loka:train
+    container_name: loka-train
+    volumes:
+      - ../:/app
+      - loka-data:/data
+      - loka-models:/models
+      - loka-cache:/cache
+    environment:
+      - LOKA_DATA_DIR=/data
+      - LOKA_MODEL_DIR=/models
+      - LOKA_CACHE_DIR=/cache
+      - WANDB_API_KEY=${WANDB_API_KEY:-}
+      - NCCL_DEBUG=INFO
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - loka-network
+    profiles:
+      - train
+    command: ["python", "scripts/train.py", "--config", "configs/train_config.yaml"]
+
+volumes:
+  loka-data:
+  loka-models:
+  loka-cache:
+
+networks:
+  loka-network:
+    driver: bridge

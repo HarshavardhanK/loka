@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loka-training
+  namespace: loka
+  labels:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: training
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400  # Clean up after 24 hours
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loka
+        app.kubernetes.io/component: training
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: loka-train
+          image: loka:train
+          imagePullPolicy: Always
+          command:
+            - python
+            - scripts/train.py
+            - --config
+            - configs/train_config.yaml
+          envFrom:
+            - configMapRef:
+                name: loka-config
+          env:
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: loka-secrets
+                  key: wandb-api-key
+                  optional: true
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: TORCH_DISTRIBUTED_DEBUG
+              value: "DETAIL"
+          resources:
+            requests:
+              memory: "64Gi"
+              cpu: "16"
+              nvidia.com/gpu: "4"
+            limits:
+              memory: "128Gi"
+              cpu: "32"
+              nvidia.com/gpu: "4"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: models
+              mountPath: /models
+            - name: cache
+              mountPath: /cache
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: loka-data-pvc
+        - name: models
+          persistentVolumeClaim:
+            claimName: loka-models-pvc
+        - name: cache
+          persistentVolumeClaim:
+            claimName: loka-cache-pvc
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Gi
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"

@@ -1,0 +1,56 @@
+name: loka
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python=3.11
+  - numpy>=2.0
+  - scipy>=1.13
+  - matplotlib>=3.9
+  
+  # Astronomy
+  - astropy>=7.0
+  - jplephem>=2.18
+  - pyerfa>=2.0
+  
+  # ML/Deep Learning
+  - pytorch>=2.0
+  - pytorch-cuda=12.1
+  - torchvision
+  - torchaudio
+  
+  # Development
+  - ipython>=8.0
+  - jupyter
+  - pytest
+  - pytest-cov
+  - black
+  - ruff
+  - mypy
+  
+  # Data processing
+  - pandas
+  - h5py
+  - pyarrow
+  
+  # RL / environments
+  - numba>=0.60
+  
+  # pip dependencies
+  - pip
+  - pip:
+    - transformers>=4.40
+    - datasets
+    - accelerate
+    - peft
+    - bitsandbytes
+    - wandb
+    - poliastro
+    - asdf-astropy>=0.7.0
+    - sentencepiece
+    - safetensors
+    - gymnasium>=1.0
+    - verl
+    - vllm
+    - ray[default]

@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: loka-service
+  namespace: loka
+  labels:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: inference
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loka-service-lb
+  namespace: loka
+  labels:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: service
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: inference

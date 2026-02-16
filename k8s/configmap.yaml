@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loka-config
+  namespace: loka
+  labels:
+    app.kubernetes.io/name: loka
+    app.kubernetes.io/component: config
+data:
+  # Model configuration
+  MODEL_NAME: "loka-v1"
+  MODEL_PRECISION: "float16"
+  MAX_SEQUENCE_LENGTH: "8192"
+  
+  # Paths
+  LOKA_DATA_DIR: "/data"
+  LOKA_MODEL_DIR: "/models"
+  LOKA_CACHE_DIR: "/cache"
+  JPL_EPHEMERIS_PATH: "/data/ephemeris"
+  
+  # Inference settings
+  INFERENCE_BATCH_SIZE: "8"
+  INFERENCE_MAX_TOKENS: "2048"
+  
+  # Training settings
+  TRAIN_BATCH_SIZE: "16"
+  GRADIENT_ACCUMULATION_STEPS: "4"
+  LEARNING_RATE: "2e-5"
+  NUM_EPOCHS: "3"
+  WARMUP_RATIO: "0.1"

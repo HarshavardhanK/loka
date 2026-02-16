@@ -1,0 +1,210 @@
+"""
+Trajectory computation tool for Loka agent.
+
+Provides orbital mechanics calculations for transfer trajectories.
+"""
+
+from typing import Any, Dict, Tuple
+import numpy as np
+
+from loka.tools.base import Tool, ToolResult
+
+
+class TrajectoryTool(Tool):
+    """
+    Tool for computing interplanetary transfer trajectories.
+    
+    Supports Hohmann transfers, Lambert problem solutions,
+    and basic delta-V calculations.
+    """
+    
+    name = "trajectory"
+    description = (
+        "Compute transfer trajectories between two orbital states. "
+        "Supports Hohmann transfers and Lambert problem solutions. "
+        "Returns delta-V requirements and transfer parameters."
+    )
+    
+    # Standard gravitational parameters (km^3/s^2)
+    MU = {
+        "sun": 1.32712440018e11,
+        "earth": 3.986004418e5,
+        "mars": 4.282837e4,
+        "jupiter": 1.26686534e8,
+    }
+    
+    @property
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "transfer_type": {
+                    "type": "string",
+                    "description": "Type of transfer to compute",
+                    "enum": ["hohmann", "lambert"],
+                },
+                "origin_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "Origin position [x, y, z] in km",
+                },
+                "origin_velocity": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "Origin velocity [vx, vy, vz] in km/s",
+                },
+                "target_position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "Target position [x, y, z] in km",
+                },
+                "target_velocity": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "Target velocity [vx, vy, vz] in km/s (for Lambert)",
+                },
+                "transfer_time": {
+                    "type": "number",
+                    "description": "Desired transfer time in days (for Lambert)",
+                },
+                "central_body": {
+                    "type": "string",
+                    "description": "Central body for the transfer",
+                    "default": "sun",
+                },
+            },
+            "required": ["transfer_type", "origin_position", "target_position"],
+        }
+    
+    def execute(
+        self,
+        transfer_type: str,
+        origin_position: list,
+        target_position: list,
+        origin_velocity: list = None,
+        target_velocity: list = None,
+        transfer_time: float = None,
+        central_body: str = "sun",
+    ) -> ToolResult:
+        """
+        Execute trajectory computation.
+        
+        Args:
+            transfer_type: Type of transfer.
+            origin_position: Starting position [x, y, z] in km.
+            target_position: Target position [x, y, z] in km.
+            origin_velocity: Starting velocity [vx, vy, vz] in km/s.
+            target_velocity: Target velocity [vx, vy, vz] in km/s.
+            transfer_time: Desired transfer time in days.
+            central_body: Central body for gravity.
+            
+        Returns:
+            ToolResult with transfer parameters.
+        """
+        try:
+            mu = self.MU.get(central_body.lower(), self.MU["sun"])
+            
+            r1 = np.array(origin_position)
+            r2 = np.array(target_position)
+            
+            if transfer_type == "hohmann":
+                result = self._compute_hohmann(r1, r2, mu)
+            elif transfer_type == "lambert":
+                if transfer_time is None:
+                    return ToolResult(
+                        success=False,
+                        output=None,
+                        error="Lambert transfer requires transfer_time parameter",
+                    )
+                result = self._compute_lambert(r1, r2, transfer_time * 86400, mu)
+            else:
+                return ToolResult(
+                    success=False,
+                    output=None,
+                    error=f"Unknown transfer type: {transfer_type}",
+                )
+            
+            return ToolResult(success=True, output=result)
+            
+        except Exception as e:
+            return ToolResult(success=False, output=None, error=str(e))
+    
+    def _compute_hohmann(
+        self,
+        r1: np.ndarray,
+        r2: np.ndarray,
+        mu: float,
+    ) -> Dict[str, Any]:
+        """Compute Hohmann transfer parameters."""
+        # Compute orbital radii (assuming circular orbits)
+        r1_mag = np.linalg.norm(r1)
+        r2_mag = np.linalg.norm(r2)
+        
+        # Circular velocities
+        v1_circ = np.sqrt(mu / r1_mag)
+        v2_circ = np.sqrt(mu / r2_mag)
+        
+        # Transfer orbit semi-major axis
+        a_transfer = (r1_mag + r2_mag) / 2
+        
+        # Velocities at periapsis and apoapsis of transfer orbit
+        v_transfer_1 = np.sqrt(mu * (2 / r1_mag - 1 / a_transfer))
+        v_transfer_2 = np.sqrt(mu * (2 / r2_mag - 1 / a_transfer))
+        
+        # Delta-V calculations
+        if r2_mag > r1_mag:
+            # Outward transfer
+            delta_v1 = v_transfer_1 - v1_circ
+            delta_v2 = v2_circ - v_transfer_2
+        else:
+            # Inward transfer
+            delta_v1 = v1_circ - v_transfer_1
+            delta_v2 = v_transfer_2 - v2_circ
+        
+        delta_v_total = abs(delta_v1) + abs(delta_v2)
+        
+        # Transfer time (half period of transfer orbit)
+        transfer_time = np.pi * np.sqrt(a_transfer**3 / mu)
+        transfer_days = transfer_time / 86400
+        
+        return {
+            "transfer_type": "hohmann",
+            "delta_v1_km_s": float(abs(delta_v1)),
+            "delta_v2_km_s": float(abs(delta_v2)),
+            "total_delta_v_km_s": float(delta_v_total),
+            "transfer_time_days": float(transfer_days),
+            "semi_major_axis_km": float(a_transfer),
+            "origin_radius_km": float(r1_mag),
+            "target_radius_km": float(r2_mag),
+        }
+    
+    def _compute_lambert(
+        self,
+        r1: np.ndarray,
+        r2: np.ndarray,
+        tof: float,
+        mu: float,
+    ) -> Dict[str, Any]:
+        """
+        Compute Lambert transfer parameters.
+        
+        This is a simplified implementation. For production use,
+        consider using poliastro or a dedicated Lambert solver.
+        """
+        # This is a placeholder for the full Lambert solver
+        # In production, use poliastro.iod.lambert
+        
+        r1_mag = np.linalg.norm(r1)
+        r2_mag = np.linalg.norm(r2)
+        
+        # Approximate using Hohmann for now
+        hohmann = self._compute_hohmann(r1, r2, mu)
+        
+        return {
+            "transfer_type": "lambert",
+            "note": "Simplified calculation - use poliastro for full Lambert solution",
+            "estimated_delta_v_km_s": hohmann["total_delta_v_km_s"],
+            "specified_transfer_time_days": tof / 86400,
+            "origin_radius_km": float(r1_mag),
+            "target_radius_km": float(r2_mag),
+        }
