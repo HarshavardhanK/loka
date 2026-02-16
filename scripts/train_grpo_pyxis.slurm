@@ -100,6 +100,14 @@ sleep 30  # let workers join
 echo "Ray cluster status:"
 ray status || true
 
+# ── Start checkpoint manager (background) ────────────────────────────
+python3 -m loka.rl.checkpoint \
+    --checkpoint-dir "${LOKA_MODEL_DIR}" \
+    --keep-last 2 --keep-best 3 \
+    --watch --interval 120 &
+CKPT_PID=$!
+echo "Checkpoint manager PID: ${CKPT_PID}"
+
 # ── Launch Verl GRPO training ────────────────────────────────────────
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -162,6 +170,13 @@ python3 -m verl.trainer.main_ppo \
     trainer.val_before_train=True \
     trainer.total_epochs=3 \
     trainer.default_local_dir="${LOKA_MODEL_DIR}"
+
+kill ${CKPT_PID} 2>/dev/null || true
+
+python3 -m loka.rl.checkpoint \
+    --checkpoint-dir "${LOKA_MODEL_DIR}" \
+    --keep-last 2 --keep-best 3 \
+    --summary
 
 echo "=============================================="
 echo "GRPO training completed at: $(date)"

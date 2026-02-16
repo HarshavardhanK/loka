@@ -19,6 +19,11 @@ from loka.rl.metrics import (
     get_tracker,
     init_wandb_run,
 )
+from loka.rl.checkpoint import (
+    CheckpointManager,
+    CheckpointConfig,
+    CheckpointMeta,
+)
 
 __all__ = [
     "SYSTEM_PROMPT",
@@ -36,4 +41,7 @@ __all__ = [
     "SampleMetrics",
     "get_tracker",
     "init_wandb_run",
+    "CheckpointManager",
+    "CheckpointConfig",
+    "CheckpointMeta",
 ]

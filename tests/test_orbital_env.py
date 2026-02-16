@@ -444,3 +444,183 @@ class TestMetricsTracker:
             assert abs(summary["loka/orbital/final_a_mean_km"] - 42100.0) < 1
         finally:
             metrics_mod._tracker = old_tracker
+
+
+# =====================================================================
+# CheckpointManager
+# =====================================================================
+
+class TestCheckpointManager:
+    """Tests for hybrid last-N + best-K checkpoint pruning."""
+
+    def _make_ckpt_dir(self, tmp_path, steps, metrics_list=None):
+        """Helper: create fake checkpoint directories."""
+        from loka.rl.checkpoint import CheckpointManager, CheckpointConfig
+        ckpt_dir = tmp_path / "checkpoints"
+        ckpt_dir.mkdir()
+
+        mgr = CheckpointManager(ckpt_dir, CheckpointConfig(keep_last=2, keep_best=3))
+
+        for i, step in enumerate(steps):
+            step_dir = ckpt_dir / f"global_step_{step}"
+            step_dir.mkdir()
+            # Create a dummy model file so we know it's real
+            (step_dir / "model.safetensors").write_text("fake")
+
+            metrics = (metrics_list[i] if metrics_list else None)
+            mgr.register(step=step, metrics=metrics)
+
+        return mgr, ckpt_dir
+
+    def test_register_finds_checkpoint(self, tmp_path):
+        from loka.rl.checkpoint import CheckpointManager
+        ckpt_dir = tmp_path / "ckpts"
+        ckpt_dir.mkdir()
+        (ckpt_dir / "global_step_50").mkdir()
+
+        mgr = CheckpointManager(ckpt_dir)
+        meta = mgr.register(step=50)
+        assert meta is not None
+        assert meta.step == 50
+        assert "global_step_50" in meta.path
+
+    def test_register_returns_none_for_missing(self, tmp_path):
+        from loka.rl.checkpoint import CheckpointManager
+        ckpt_dir = tmp_path / "ckpts"
+        ckpt_dir.mkdir()
+
+        mgr = CheckpointManager(ckpt_dir)
+        assert mgr.register(step=999) is None
+
+    def test_prune_keeps_last_2(self, tmp_path):
+        """With 5 checkpoints and no metrics, should keep the last 2."""
+        mgr, ckpt_dir = self._make_ckpt_dir(tmp_path, [50, 100, 150, 200, 250])
+
+        pruned = mgr.prune()
+        remaining = [c.step for c in mgr.registered]
+
+        # Last 2: 200, 250
+        assert 250 in remaining
+        assert 200 in remaining
+        # At most keep_last(2) + keep_best(3) = 5, but with no metrics
+        # best-K is just the first K by default score (-1,-1,-1)
+        # All have the same score, so best-3 is arbitrary — total kept ≤ 5
+        assert len(remaining) <= 5
+
+    def test_prune_keeps_best_3_by_success_rate(self, tmp_path):
+        """Best checkpoints by success rate should be preserved."""
+        metrics = [
+            {"loka/orbital/success_rate": 0.1},   # step 50  — worst
+            {"loka/orbital/success_rate": 0.9},   # step 100 — BEST
+            {"loka/orbital/success_rate": 0.3},   # step 150 — mid
+            {"loka/orbital/success_rate": 0.8},   # step 200 — 2nd best
+            {"loka/orbital/success_rate": 0.7},   # step 250 — 3rd best
+            {"loka/orbital/success_rate": 0.2},   # step 300 — bad
+            {"loka/orbital/success_rate": 0.5},   # step 350 — recent
+            {"loka/orbital/success_rate": 0.4},   # step 400 — most recent
+        ]
+        mgr, ckpt_dir = self._make_ckpt_dir(
+            tmp_path,
+            [50, 100, 150, 200, 250, 300, 350, 400],
+            metrics,
+        )
+
+        pruned = mgr.prune()
+        remaining_steps = {c.step for c in mgr.registered}
+
+        # Must keep last-2: 350, 400
+        assert 350 in remaining_steps
+        assert 400 in remaining_steps
+
+        # Must keep best-3 by success_rate: 100 (0.9), 200 (0.8), 250 (0.7)
+        assert 100 in remaining_steps
+        assert 200 in remaining_steps
+        assert 250 in remaining_steps
+
+        # Pruned: 50 (0.1), 150 (0.3), 300 (0.2)
+        assert 50 not in remaining_steps
+        assert 150 not in remaining_steps
+        assert 300 not in remaining_steps
+
+        # Directories actually deleted
+        assert not (ckpt_dir / "global_step_50").exists()
+        assert not (ckpt_dir / "global_step_150").exists()
+        assert not (ckpt_dir / "global_step_300").exists()
+
+        # Best directories still exist
+        assert (ckpt_dir / "global_step_100").exists()
+        assert (ckpt_dir / "global_step_200").exists()
+
+    def test_prune_no_deletions_when_under_limit(self, tmp_path):
+        """If we have ≤ keep_last + keep_best checkpoints, nothing is pruned."""
+        mgr, ckpt_dir = self._make_ckpt_dir(tmp_path, [50, 100, 150])
+        pruned = mgr.prune()
+        assert len(pruned) == 0
+        assert len(mgr.registered) == 3
+
+    def test_score_ranking_uses_dv_efficiency_as_tiebreak(self, tmp_path):
+        """When success rates are equal, dv_efficiency breaks ties."""
+        from loka.rl.checkpoint import CheckpointMeta
+
+        c1 = CheckpointMeta(path="/a", step=1, timestamp=1.0,
+                            success_rate=0.9, dv_efficiency=0.85)
+        c2 = CheckpointMeta(path="/b", step=2, timestamp=2.0,
+                            success_rate=0.9, dv_efficiency=0.95)
+
+        assert c2.score() > c1.score()
+
+    def test_register_and_prune_convenience(self, tmp_path):
+        from loka.rl.checkpoint import CheckpointManager, CheckpointConfig
+        ckpt_dir = tmp_path / "ckpts"
+        ckpt_dir.mkdir()
+
+        mgr = CheckpointManager(ckpt_dir, CheckpointConfig(keep_last=1, keep_best=1))
+
+        for step in [50, 100, 150]:
+            (ckpt_dir / f"global_step_{step}").mkdir()
+            mgr.register_and_prune(
+                step=step,
+                metrics={"loka/orbital/success_rate": step / 1000.0},
+            )
+
+        remaining = {c.step for c in mgr.registered}
+        # keep_last=1 → 150; keep_best=1 → 150 (highest success)
+        # So only 150 survives (it's both the latest and best)
+        # But 100 has the 2nd highest success — it gets pruned since
+        # keep_best=1 only saves the #1
+        assert 150 in remaining
+        assert len(remaining) <= 2  # at most keep_last + keep_best
+
+    def test_summary_structure(self, tmp_path):
+        metrics = [
+            {"loka/orbital/success_rate": 0.5, "loka/reward/total_mean": 0.3},
+            {"loka/orbital/success_rate": 0.8, "loka/reward/total_mean": 0.7},
+        ]
+        mgr, _ = self._make_ckpt_dir(tmp_path, [50, 100], metrics)
+        summary = mgr.summary()
+
+        assert summary["total_registered"] == 2
+        assert summary["keep_last"] == 2
+        assert summary["keep_best"] == 3
+        assert len(summary["checkpoints"]) == 2
+        assert summary["checkpoints"][0]["step"] == 50
+        assert summary["checkpoints"][1]["step"] == 100
+
+    def test_metadata_persists_on_disk(self, tmp_path):
+        """Metadata files should survive a manager restart."""
+        from loka.rl.checkpoint import CheckpointManager, CheckpointConfig
+        ckpt_dir = tmp_path / "ckpts"
+        ckpt_dir.mkdir()
+        (ckpt_dir / "global_step_50").mkdir()
+
+        cfg = CheckpointConfig(keep_last=2, keep_best=3)
+
+        mgr1 = CheckpointManager(ckpt_dir, cfg)
+        mgr1.register(step=50, metrics={"loka/orbital/success_rate": 0.42})
+        assert len(mgr1.registered) == 1
+
+        # Create a new manager — it should reload from disk
+        mgr2 = CheckpointManager(ckpt_dir, cfg)
+        assert len(mgr2.registered) == 1
+        assert mgr2.registered[0].step == 50
+        assert abs(mgr2.registered[0].success_rate - 0.42) < 1e-6

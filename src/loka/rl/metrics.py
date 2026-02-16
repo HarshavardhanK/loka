@@ -15,17 +15,24 @@ This module adds **Loka-specific** metrics on top:
     - Orbital mechanics (success rate, ΔV efficiency, final elements)
     - Action parsing quality (XML, JSON, regex, fallback rates)
     - Curriculum stage tracking
+    - Automatic checkpoint pruning (hybrid last-N + best-K)
 """
 
 from __future__ import annotations
 
+import logging
 import time
 import threading
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 import numpy as np
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from loka.rl.checkpoint import CheckpointManager
+
+logger = logging.getLogger(__name__)
 
 
 # ── Pydantic schema for a single sample's metrics ───────────────────
@@ -63,6 +70,8 @@ class SampleMetrics(BaseModel):
 class MetricsTracker:
     """Accumulates per-sample metrics and flushes to wandb in batches.
 
+    Optionally manages checkpoint pruning via a :class:`CheckpointManager`.
+
     Parameters
     ----------
     flush_every : int
@@ -70,9 +79,22 @@ class MetricsTracker:
         (one full GRPO batch).
     enabled : bool
         If ``False``, all operations are no-ops (for testing / dry runs).
+    checkpoint_manager : CheckpointManager, optional
+        If provided, each flush will also register the current step's
+        metrics with the checkpoint manager and prune old checkpoints.
+    save_freq : int, optional
+        How often Verl saves checkpoints (in training steps).  Used to
+        detect whether the current flush aligns with a checkpoint save.
+        Default ``50`` (matching ``trainer.save_freq``).
     """
 
-    def __init__(self, flush_every: int = 256, enabled: bool = True):
+    def __init__(
+        self,
+        flush_every: int = 256,
+        enabled: bool = True,
+        checkpoint_manager: Optional[CheckpointManager] = None,
+        save_freq: int = 50,
+    ):
         self._flush_every = flush_every
         self._enabled = enabled
         self._buffer: list[SampleMetrics] = []
@@ -81,6 +103,8 @@ class MetricsTracker:
         self._total_samples = 0
         self._start_time = time.monotonic()
         self._wandb = None  # lazy import
+        self._ckpt_mgr = checkpoint_manager
+        self._save_freq = save_freq
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -140,6 +164,17 @@ class MetricsTracker:
         )
 
         self._wandb.log(summary)
+
+        # ── Checkpoint management ────────────────────────────────────
+        if self._ckpt_mgr and self._step % self._save_freq == 0:
+            try:
+                pruned = self._ckpt_mgr.register_and_prune(
+                    step=self._step, metrics=summary,
+                )
+                if pruned:
+                    logger.info("Pruned %d checkpoints: %s", len(pruned), pruned)
+            except Exception:
+                logger.warning("Checkpoint pruning failed", exc_info=True)
 
     @staticmethod
     def _aggregate(buffer: list[SampleMetrics]) -> dict[str, Any]:
@@ -224,11 +259,29 @@ class MetricsTracker:
 _tracker: Optional[MetricsTracker] = None
 
 
-def get_tracker(flush_every: int = 256) -> MetricsTracker:
-    """Get or create the global MetricsTracker singleton."""
+def get_tracker(
+    flush_every: int = 256,
+    checkpoint_manager: Optional[CheckpointManager] = None,
+    save_freq: int = 50,
+) -> MetricsTracker:
+    """Get or create the global MetricsTracker singleton.
+
+    Parameters
+    ----------
+    flush_every : int
+        Flush to wandb after this many samples.
+    checkpoint_manager : CheckpointManager, optional
+        If provided on first call, enables automatic checkpoint pruning.
+    save_freq : int
+        How often Verl saves checkpoints (training steps).
+    """
     global _tracker
     if _tracker is None:
-        _tracker = MetricsTracker(flush_every=flush_every)
+        _tracker = MetricsTracker(
+            flush_every=flush_every,
+            checkpoint_manager=checkpoint_manager,
+            save_freq=save_freq,
+        )
     return _tracker
 
 
