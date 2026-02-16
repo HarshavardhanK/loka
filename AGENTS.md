@@ -36,6 +36,11 @@ Loka is an agentic AI model for astrophysics navigation and trajectory planning.
 
 ## Development Guidelines
 
+### Commit Messages
+
+- Keep commit messages to **5–6 words** (concise, imperative mood)
+- Examples: `Fix prompt seek overwriting timeline`, `Add asteroid belt rendering logic`
+
 ### Pre-commit Hook (MANDATORY)
 
 A pre-commit hook runs **linting, unit tests, and integration tests** before

@@ -23,6 +23,7 @@ export default function App(): JSX.Element {
 
   const missionDayRef = useRef(0);
   const busyRef = useRef(false);
+  const pendingSeekDayRef = useRef<number | null>(null);
 
   useEffect(() => {
     missionDayRef.current = snapshot?.missionDay ?? 0;
@@ -56,7 +57,19 @@ export default function App(): JSX.Element {
 
   const seek = useCallback(
     async (day: number) => {
-      await runSnapshotUpdate(() => api.seek(day));
+      // Always record the latest desired position so rapid calls
+      // (e.g. from a slider drag) coalesce to the final value.
+      pendingSeekDayRef.current = day;
+      if (busyRef.current) {
+        return;
+      }
+      // Drain loop: after each API round-trip, re-check whether a
+      // newer seek arrived while we were busy and process it.
+      while (pendingSeekDayRef.current !== null) {
+        const target = pendingSeekDayRef.current;
+        pendingSeekDayRef.current = null;
+        await runSnapshotUpdate(() => api.seek(target));
+      }
     },
     [api, runSnapshotUpdate],
   );
@@ -95,7 +108,7 @@ export default function App(): JSX.Element {
           content: result.assistant,
         };
         setLines((existing) => [...existing, assistantLine]);
-        await runSnapshotUpdate(() => api.seek(missionDayRef.current));
+        await runSnapshotUpdate(() => api.advance(0));
       } catch (promptError) {
         const message = promptError instanceof Error ? promptError.message : "Prompt execution failed";
         setLines((existing) => [
