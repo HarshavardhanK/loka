@@ -35,6 +35,9 @@ export HF_HOME="${LOKA_CACHE_DIR}/huggingface"
 # HF_TOKEN: set via environment or `huggingface-cli login` before submission
 export HF_TOKEN="${HF_TOKEN:?Set HF_TOKEN before submitting this job}"
 
+# WANDB_API_KEY: set via environment or `wandb login` before submission
+export WANDB_API_KEY="${WANDB_API_KEY:?Set WANDB_API_KEY before submitting this job}"
+
 # site-packages FIRST so verl/vllm-compatible transformers 4.57.x
 # takes priority over system's transformers 5.1.0 (which removed
 # AutoModelForVision2Seq that verl requires).
@@ -151,7 +154,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=2 \
     trainer.project_name=orbital_rl \
     trainer.experiment_name=leo_to_geo_grpo \
-    trainer.logger=console \
+    trainer.logger=wandb \
     trainer.save_freq=50 \
     trainer.val_before_train=True \
     trainer.total_epochs=3 \

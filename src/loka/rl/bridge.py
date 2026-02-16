@@ -212,13 +212,19 @@ class ActionParser:
 
     @staticmethod
     def _try_json(s: str):
-        """Attempt lenient JSON parse, returning ``ndarray | None``."""
+        """Attempt lenient JSON parse, returning ``ndarray | None``.
+
+        Returns ``None`` when the parsed value is not a dict (e.g. the
+        model emits ``false``, ``null``, a bare number, or a list).
+        """
         s = s.replace("'", '"')
         s = re.sub(r",\s*}", "}", s)
         try:
             d = json.loads(s)
+            if not isinstance(d, dict):
+                return None
             t = np.clip(float(d.get("thrust", 0)), 0.0, 1.0)
             a = np.clip(float(d.get("angle", 0)), -180, 180) / 180.0
             return np.array([t, a], dtype=np.float32)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
             return None

@@ -157,6 +157,31 @@ class TestActionParser:
         assert action[0] == 1.0    # clamped
         assert action[1] == 1.0    # 180/180 clamped
 
+    def test_non_dict_json_falls_through(self):
+        """Regression test: LLM may emit <action>false</action> or other
+        non-dict JSON, which should gracefully fall to a lower strategy."""
+        parser = self._parser()
+        # bool
+        text = "<action>false</action>"
+        action, reward, method = parser.parse(text)
+        assert method in ("regex", "fallback")
+        # null
+        text2 = "<action>null</action>"
+        _, _, method2 = parser.parse(text2)
+        assert method2 in ("regex", "fallback")
+        # list
+        text3 = "<action>[0.5, 10.0]</action>"
+        _, _, method3 = parser.parse(text3)
+        assert method3 in ("regex", "fallback")
+        # bare number
+        text4 = "<action>42</action>"
+        _, _, method4 = parser.parse(text4)
+        assert method4 in ("regex", "fallback")
+        # string
+        text5 = '<action>"coast"</action>'
+        _, _, method5 = parser.parse(text5)
+        assert method5 in ("regex", "fallback")
+
 
 # =====================================================================
 # compute_score

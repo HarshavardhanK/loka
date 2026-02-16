@@ -36,6 +36,59 @@ Images will be pushed to: `ghcr.io/<username>/loka:latest`
 
 Images will be pushed to: `docker.io/<username>/loka:latest`
 
+## Additional Secrets (Training)
+
+These are **not** used by CI/CD but are needed when running training jobs on the cluster.
+
+| Secret / Env Var     | Where                       | Description                                    |
+|----------------------|-----------------------------|------------------------------------------------|
+| `WANDB_API_KEY`      | SLURM env / K8s secret      | Weights & Biases API key for experiment logging |
+| `HF_TOKEN`           | SLURM env / K8s secret      | HuggingFace token for gated model downloads    |
+
+### Weights & Biases (wandb)
+
+1. Go to [wandb.ai/authorize](https://wandb.ai/authorize) and copy your API key.
+2. **For SLURM:** Export it before submitting the job:
+   ```bash
+   export WANDB_API_KEY="your-key-here"
+   sbatch scripts/train_grpo_native.slurm
+   ```
+3. **For Kubernetes:** Create the secret:
+   ```bash
+   kubectl -n loka create secret generic loka-secrets \
+     --from-literal=wandb-api-key="your-key-here" \
+     --from-literal=hf-token="your-hf-token"
+   ```
+4. **For GitHub Actions** (if you add wandb to CI tests later): add `WANDB_API_KEY` as a repository secret.
+
+### Ray Dashboard Access
+
+The Ray dashboard runs on port **8265** on the head node. Both SLURM scripts start it with `--dashboard-host=0.0.0.0`.
+
+#### SLURM — SSH tunnel
+
+```bash
+# Find which node is the head (first node in the allocation)
+HEAD_NODE=$(squeue -j <JOB_ID> -o "%N" -h | cut -d',' -f1)
+
+# Open an SSH tunnel through the login node
+ssh -L 8265:${HEAD_NODE}:8265 login-0
+```
+
+Then open [http://localhost:8265](http://localhost:8265) in your browser.
+
+#### Kubernetes — port-forward
+
+```bash
+kubectl -n loka port-forward svc/loka-rl-head 8265:8265
+```
+
+Then open [http://localhost:8265](http://localhost:8265) in your browser.
+
+The dashboard shows: cluster resources, running/pending tasks, GPU utilization, actor logs, and job timeline.
+
+---
+
 ## Image Tagging (Automated)
 
 Tags are generated automatically by `docker/metadata-action` — no manual versioning needed.

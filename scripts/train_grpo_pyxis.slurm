@@ -38,6 +38,9 @@ export LOKA_MODEL_DIR="${LOKA_ROOT}/checkpoints"
 export LOKA_CACHE_DIR="${LOKA_ROOT}/cache"
 export HF_HOME="${LOKA_CACHE_DIR}/huggingface"
 
+# WANDB_API_KEY: set via environment before submission
+export WANDB_API_KEY="${WANDB_API_KEY:?Set WANDB_API_KEY before submitting this job}"
+
 # Make source importable
 export PYTHONPATH="${LOKA_ROOT}/src:${PYTHONPATH:-}"
 
@@ -77,7 +80,8 @@ echo "Head node: ${HEAD_NODE} (${HEAD_ADDR}:${RAY_PORT})"
 # Head
 srun --nodes=1 --ntasks=1 -w "${HEAD_NODE}" --gres=gpu:8 \
     ray start --head --port=${RAY_PORT} \
-    --num-cpus=96 --num-gpus=8 --block &
+    --num-cpus=96 --num-gpus=8 \
+    --dashboard-host=0.0.0.0 --include-dashboard=true --block &
 
 sleep 20  # give head time to bind
 
