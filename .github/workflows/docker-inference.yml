@@ -1,0 +1,89 @@
+# =============================================================================
+# Inference Image — Independent build pipeline
+# =============================================================================
+# Triggers:
+#   - Push to main that touches inference-related files
+#   - Version tags (v*)
+#   - Manual dispatch — use this to deploy a newly trained model
+#
+# The inference image is decoupled from training.  The typical workflow is:
+#   1. RL training runs on the cluster, saves checkpoints
+#   2. You pick the best checkpoint (via CheckpointManager or wandb)
+#   3. Push the model to HuggingFace Hub (or a shared volume)
+#   4. Trigger this workflow (manual dispatch) with the model path/ID
+#   5. The inference image serves it via vLLM's OpenAI-compatible API
+#
+# Required GitHub Secrets:
+#   DOCKER_REGISTRY, DOCKER_USERNAME, DOCKER_PASSWORD
+# =============================================================================
+
+name: Docker — Inference
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "src/loka/tools/**"
+      - "src/loka/astro/**"
+      - "src/loka/agent/**"
+      - "docker/Dockerfile.inference"
+      - "pyproject.toml"
+  workflow_dispatch:
+    inputs:
+      model_path:
+        description: "Model to serve (HF model ID or path baked into the image)"
+        required: false
+        default: ""
+
+concurrency:
+  group: docker-infer-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_IMAGE: ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/loka
+
+jobs:
+
+  build-push:
+    name: Build & Push Inference Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=semver,pattern=infer-{{version}}
+            type=semver,pattern=infer-{{major}}.{{minor}}
+            type=raw,value=infer-latest,enable={{is_default_branch}}
+            type=ref,event=branch,prefix=infer-
+            type=sha,prefix=infer-sha-
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.inference
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=infer
+          cache-to: type=gha,mode=max,scope=infer
+          platforms: linux/amd64

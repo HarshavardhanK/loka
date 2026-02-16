@@ -1,9 +1,12 @@
 # =============================================================================
-# Loka CI/CD — Modular Pipeline
+# Loka CI — Tests, Lint, Production Image
 # =============================================================================
-# Jobs run independently where possible. Docker builds only after all
-# quality gates pass.  Each image builds in its own job so a failure
-# in one doesn't block the others.
+# This workflow handles code quality and the base production image.
+#
+# RL training and inference images have their own independent workflows:
+#   - docker-train.yml    — triggered by training-related file changes
+#   - docker-inference.yml — triggered by inference-related file changes
+#                            or manual dispatch to deploy a trained model
 #
 # ┌───────┐  ┌────────────┐  ┌──────────────────┐
 # │ lint  │  │ unit-tests │  │ integration-tests │   ← parallel
@@ -12,11 +15,11 @@
 #                   ▼
 #     ┌─────────────────────────┐
 #     │     quality-gate        │   ← fan-in checkpoint
-#     └──┬──────────┬──────────┬┘
-#        ▼          ▼          ▼
-#   ┌────────┐ ┌────────┐ ┌───────────┐
-#   │  prod  │ │   rl   │ │ inference │   ← parallel Docker builds
-#   └────────┘ └────────┘ └───────────┘
+#     └────────────┬────────────┘
+#                  ▼
+#            ┌──────────┐
+#            │   prod   │   ← production Docker image
+#            └──────────┘
 #
 # Required GitHub Secrets:
 #   DOCKER_REGISTRY   – e.g. "ghcr.io"
@@ -158,7 +161,7 @@ jobs:
           echo "✅ All quality gates passed"
 
   # ================================================================
-  # Phase 3 — Docker builds (parallel, only on push to main/tags)
+  # Phase 3 — Production Docker image (only on push to main/tags)
   # ================================================================
 
   docker-prod:
@@ -206,98 +209,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=prod
           cache-to: type=gha,mode=max,scope=prod
-          platforms: linux/amd64
-
-  # ── RL training image ────────────────────────────────────────────
-
-  docker-rl:
-    name: Docker — RL Training
-    needs: quality-gate
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.DOCKER_REGISTRY }}
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=semver,pattern=rl-{{version}}
-            type=semver,pattern=rl-{{major}}.{{minor}}
-            type=raw,value=rl-train,enable={{is_default_branch}}
-            type=ref,event=branch,prefix=rl-
-            type=sha,prefix=rl-sha-
-
-      - name: Build & push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.rl
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=rl
-          cache-to: type=gha,mode=max,scope=rl
-          platforms: linux/amd64
-
-  # ── Inference image ──────────────────────────────────────────────
-
-  docker-inference:
-    name: Docker — Inference
-    needs: quality-gate
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.DOCKER_REGISTRY }}
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=semver,pattern=infer-{{version}}
-            type=semver,pattern=infer-{{major}}.{{minor}}
-            type=raw,value=infer-latest,enable={{is_default_branch}}
-            type=ref,event=branch,prefix=infer-
-            type=sha,prefix=infer-sha-
-
-      - name: Build & push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.inference
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=infer
-          cache-to: type=gha,mode=max,scope=infer
           platforms: linux/amd64
