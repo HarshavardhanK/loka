@@ -36,17 +36,62 @@ Loka is an agentic AI model for astrophysics navigation and trajectory planning.
 
 ## Development Guidelines
 
+### Pre-commit Hook (MANDATORY)
+
+A pre-commit hook runs **linting, unit tests, and integration tests** before
+every commit. All agents and developers MUST have this hook active.
+
+```bash
+# One-time setup (run after cloning)
+./scripts/install-hooks.sh
+```
+
+This sets `git core.hooksPath` to `.githooks/` so the tracked hook is used
+automatically. The hook runs:
+
+1. `ruff check src/ tests/` — lint (fails fast)
+2. `pytest tests/test_coordinates.py tests/test_tools.py tests/test_orbital_env.py` — unit tests
+3. `pytest tests/test_integration.py` — integration tests
+
+If any step fails, the commit is **aborted**. Fix the issues first.
+
+To skip in an emergency (use sparingly):
+```bash
+SKIP_PRE_COMMIT=1 git commit -m "emergency fix"
+```
+
 ### Code Style
 
-- Follow PEP 8 with 88-character line limit (Black formatter)
+- Follow PEP 8 with 88-character line limit (ruff / Black formatter)
 - Use type hints for all function signatures
 - Docstrings in NumPy format
+- Use `X | None` instead of `Optional[X]` (PEP 604)
+- Use `list[T]` / `dict[K, V]` instead of `List[T]` / `Dict[K, V]` (PEP 585)
+- Physics variable names (`R_E`, `G`, `MU`) are exempt from naming rules
+
+### Linting
+
+```bash
+# Check
+ruff check src/ tests/
+
+# Auto-fix
+ruff check src/ tests/ --fix
+
+# Config is in pyproject.toml [tool.ruff.lint]
+```
 
 ### Testing
 
 ```bash
-# Run tests
+# Run all tests
 pytest tests/
+
+# Just unit tests (fast — what the pre-commit hook runs)
+pytest tests/test_coordinates.py tests/test_tools.py tests/test_orbital_env.py -v
+
+# Integration tests
+pytest tests/test_integration.py -v
 
 # With coverage
 pytest --cov=loka tests/
@@ -70,10 +115,15 @@ python scripts/download_ephemeris.py --target de440s
 
 #### Training
 
-Training runs on SLURM cluster. Key files:
-- `configs/train_config.yaml` - Hyperparameters
-- `scripts/train.slurm` - Job submission script
+Training runs on SLURM cluster or Kubernetes. Key files:
+- `configs/grpo_config.yaml` - GRPO training hyperparameters
+- `configs/train_config.yaml` - Base model training hyperparameters
+- `scripts/train_grpo.slurm` - GRPO job submission (generic)
+- `scripts/train_grpo_native.slurm` - GRPO on native SLURM workers
+- `scripts/train_grpo_pyxis.slurm` - GRPO via Pyxis container
+- `k8s/training-job-rl.yaml` - Kubernetes GRPO training job
 - Kubeconfig: set via `KUBECONFIG` environment variable (not committed to repo)
+- Model: `Qwen/Qwen2.5-7B-Instruct`
 
 ### Dependencies
 
@@ -96,7 +146,12 @@ LOKA_DATA_DIR       # Path to ephemeris and training data
 LOKA_MODEL_DIR      # Path to model checkpoints
 LOKA_CACHE_DIR      # Caching directory
 JPL_EPHEMERIS_PATH  # Path to SPK kernel files
+WANDB_API_KEY       # Weights & Biases API key (training only)
+HF_TOKEN            # HuggingFace token for gated models (training only)
 ```
+
+Local credentials are stored in `.env` (gitignored). See `.github/SECRETS.md`
+for full secret setup instructions.
 
 ## Important Files
 
@@ -105,8 +160,16 @@ JPL_EPHEMERIS_PATH  # Path to SPK kernel files
 | `src/loka/agent/base.py` | Main agent implementation |
 | `src/loka/model/loka_model.py` | Model architecture |
 | `src/loka/astro/coordinates.py` | Coordinate transformations |
-| `configs/train_config.yaml` | Training configuration |
-| `k8s/deployment.yaml` | Kubernetes deployment |
+| `src/loka/rl/bridge.py` | LLM ↔ environment bridge (system prompt, action parsing) |
+| `src/loka/rl/reward.py` | Verl-compatible reward function |
+| `src/loka/rl/metrics.py` | Domain-specific wandb metrics tracker |
+| `src/loka/rl/checkpoint.py` | Hybrid checkpoint manager (last-N + best-K) |
+| `configs/grpo_config.yaml` | GRPO training configuration |
+| `configs/train_config.yaml` | Base model training configuration |
+| `k8s/deployment.yaml` | Kubernetes inference deployment |
+| `k8s/training-job-rl.yaml` | Kubernetes GRPO training job |
+| `.githooks/pre-commit` | Pre-commit hook (lint + tests) |
+| `.env` | Local credentials (gitignored) |
 
 ## Physical Constants
 

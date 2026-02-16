@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Loka — Pre-commit hook
+# =============================================================================
+# Runs linting, unit tests, and integration tests before every commit.
+# Fails fast: if any check fails the commit is aborted.
+#
+# Install:
+#   git config core.hooksPath .githooks
+# Or:
+#   ./scripts/install-hooks.sh
+# =============================================================================
+
+set -euo pipefail
+
+# ── Colours (if terminal supports them) ──────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No colour
+
+info()  { echo -e "${CYAN}[pre-commit]${NC} $*"; }
+pass()  { echo -e "${GREEN}[pre-commit] ✓${NC} $*"; }
+fail()  { echo -e "${RED}[pre-commit] ✗${NC} $*"; }
+warn()  { echo -e "${YELLOW}[pre-commit] ⚠${NC} $*"; }
+
+# ── Skip hook if requested ───────────────────────────────────────────
+if [ "${SKIP_PRE_COMMIT:-}" = "1" ]; then
+    warn "SKIP_PRE_COMMIT=1 — skipping all pre-commit checks"
+    exit 0
+fi
+
+# ── Resolve project root ────────────────────────────────────────────
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+FAILED=0
+
+# ── 1. Ruff lint ────────────────────────────────────────────────────
+info "Running ruff lint on src/ and tests/ …"
+if ruff check src/ tests/ 2>&1; then
+    pass "Ruff lint"
+else
+    fail "Ruff lint — run 'ruff check src/ tests/ --fix' to auto-fix"
+    FAILED=1
+fi
+
+# ── 2. Unit tests ───────────────────────────────────────────────────
+info "Running unit tests …"
+if python -m pytest tests/test_coordinates.py tests/test_tools.py tests/test_orbital_env.py \
+        -x -q --tb=short --no-header 2>&1; then
+    pass "Unit tests"
+else
+    fail "Unit tests"
+    FAILED=1
+fi
+
+# ── 3. Integration tests ────────────────────────────────────────────
+info "Running integration tests …"
+if python -m pytest tests/test_integration.py \
+        -x -q --tb=short --no-header 2>&1; then
+    pass "Integration tests"
+else
+    fail "Integration tests"
+    FAILED=1
+fi
+
+# ── Summary ──────────────────────────────────────────────────────────
+echo ""
+if [ "$FAILED" -ne 0 ]; then
+    fail "Pre-commit checks FAILED — commit aborted."
+    echo -e "    To skip (use sparingly): ${YELLOW}SKIP_PRE_COMMIT=1 git commit …${NC}"
+    exit 1
+else
+    pass "All pre-commit checks passed."
+    exit 0
+fi
