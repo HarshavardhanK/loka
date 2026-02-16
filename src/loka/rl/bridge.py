@@ -3,13 +3,16 @@ Text-to-tensor bridge for LLM-based spacecraft control.
 
 Converts environment observations into natural-language prompts and
 parses LLM text outputs into continuous thrust actions.
+
+Uses Pydantic v2 for schema validation so the parser never crashes on
+malformed model outputs (booleans, nulls, lists, wrong types, etc.).
 """
 
-import json
 import re
 from typing import List, Dict, Tuple
 
 import numpy as np
+from pydantic import BaseModel, field_validator, ValidationError
 
 # ── System prompt (DeepSeek-R1 think/action paradigm) ─────────────────
 
@@ -138,6 +141,39 @@ class OrbitalObservationWrapper:
         ]
 
 
+# ── Pydantic model for thrust commands ─────────────────────────────
+
+
+class ThrustCommand(BaseModel):
+    """Validated thrust command parsed from LLM output.
+
+    Pydantic handles all edge cases automatically:
+    - Rejects non-object JSON (``false``, ``null``, lists, bare numbers)
+    - Coerces numeric strings (``"0.5"`` → ``0.5``)
+    - Applies defaults when fields are missing
+    - Clamps values via field validators
+    """
+
+    thrust: float = 0.0
+    angle: float = 0.0
+
+    @field_validator("thrust")
+    @classmethod
+    def clamp_thrust(cls, v: float) -> float:
+        return float(np.clip(v, 0.0, 1.0))
+
+    @field_validator("angle")
+    @classmethod
+    def clamp_angle(cls, v: float) -> float:
+        return float(np.clip(v, -180.0, 180.0))
+
+    def to_action(self) -> np.ndarray:
+        """Convert to ``[thrust_frac, angle_normalised]`` for ``env.step()``."""
+        return np.array(
+            [self.thrust, self.angle / 180.0], dtype=np.float32,
+        )
+
+
 # ── Action parser with cascading fallbacks ────────────────────────────
 
 
@@ -147,10 +183,14 @@ class ActionParser:
     Four strategies are tried in order, each returning a decreasing
     format reward:
 
-    1. XML ``<action>`` tag + JSON  (reward +1.0)
-    2. Bare JSON anywhere           (reward +0.5)
-    3. Regex field extraction        (reward +0.25)
-    4. Default coast action          (reward -0.5)
+    1. XML ``<action>`` tag + validated JSON  (reward +1.0)
+    2. Bare JSON anywhere                     (reward +0.5)
+    3. Regex field extraction                 (reward +0.25)
+    4. Default coast action                   (reward -0.5)
+
+    JSON parsing and validation is handled entirely by
+    :class:`ThrustCommand` (Pydantic v2), which rejects non-dict
+    payloads, coerces types, fills defaults, and clamps ranges.
     """
 
     _XML_RE = re.compile(r"<action>\s*(.*?)\s*</action>", re.DOTALL | re.I)
@@ -180,30 +220,29 @@ class ActionParser:
         method : str
             One of ``"xml_json"``, ``"bare_json"``, ``"regex"``, ``"fallback"``.
         """
-        # Strategy 1: XML + JSON (best case)
+        # Strategy 1: XML + validated JSON (best case)
         m = self._XML_RE.search(text)
         if m:
-            action = self._try_json(m.group(1))
-            if action is not None:
-                return action, 1.0, "xml_json"
+            cmd = self._validate(m.group(1))
+            if cmd is not None:
+                return cmd.to_action(), 1.0, "xml_json"
 
         # Strategy 2: bare JSON anywhere
         m = self._JSON_RE.search(text)
         if m:
-            action = self._try_json(m.group(0))
-            if action is not None:
-                return action, 0.5, "bare_json"
+            cmd = self._validate(m.group(0))
+            if cmd is not None:
+                return cmd.to_action(), 0.5, "bare_json"
 
-        # Strategy 3: regex field extraction
+        # Strategy 3: regex field extraction → pydantic validation
         vals: Dict[str, float] = {}
         for key, pat in self._FIELD_RE.items():
             fm = pat.search(text)
             if fm:
                 vals[key] = float(fm.group(1))
         if vals:
-            t = np.clip(vals.get("thrust", 0.0), 0.0, 1.0)
-            a = np.clip(vals.get("angle", 0.0), -180, 180) / 180.0
-            return np.array([t, a], dtype=np.float32), 0.25, "regex"
+            cmd = ThrustCommand(**vals)
+            return cmd.to_action(), 0.25, "regex"
 
         # Strategy 4: default (no thrust)
         return self.DEFAULT.copy(), -0.5, "fallback"
@@ -211,20 +250,16 @@ class ActionParser:
     # ── internal helpers ──────────────────────────────────────────────
 
     @staticmethod
-    def _try_json(s: str):
-        """Attempt lenient JSON parse, returning ``ndarray | None``.
+    def _validate(s: str) -> ThrustCommand | None:
+        """Parse and validate a JSON string via Pydantic.
 
-        Returns ``None`` when the parsed value is not a dict (e.g. the
-        model emits ``false``, ``null``, a bare number, or a list).
+        Handles all LLM quirks: single quotes, trailing commas,
+        non-dict payloads (``false``, ``null``, lists), wrong types, etc.
+        Returns ``None`` on any validation failure.
         """
         s = s.replace("'", '"')
         s = re.sub(r",\s*}", "}", s)
         try:
-            d = json.loads(s)
-            if not isinstance(d, dict):
-                return None
-            t = np.clip(float(d.get("thrust", 0)), 0.0, 1.0)
-            a = np.clip(float(d.get("angle", 0)), -180, 180) / 180.0
-            return np.array([t, a], dtype=np.float32)
-        except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+            return ThrustCommand.model_validate_json(s)
+        except (ValidationError, ValueError):
             return None
