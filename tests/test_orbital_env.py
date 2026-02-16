@@ -287,3 +287,160 @@ class TestCurriculumScheduler:
             mix = sched.get_mix(step, 1000)
             total = mix.circularize + mix.hohmann + mix.plane_change
             assert abs(total - 1.0) < 1e-9
+
+
+# =====================================================================
+# MetricsTracker
+# =====================================================================
+
+class TestMetricsTracker:
+    """Tests for the domain-specific metrics tracking."""
+
+    def test_sample_metrics_defaults(self):
+        from loka.rl.metrics import SampleMetrics
+        m = SampleMetrics()
+        assert m.total_reward == 0.0
+        assert m.parse_method == "fallback"
+        assert m.success is None
+
+    def test_sample_metrics_with_values(self):
+        from loka.rl.metrics import SampleMetrics
+        m = SampleMetrics(
+            total_reward=0.75,
+            format_reward=0.15,
+            physics_reward=0.60,
+            parse_method="xml_json",
+            success=True,
+            final_a_km=42164.0,
+            final_e=0.001,
+            dv_total_kms=3.9,
+            dv_hohmann_kms=3.854,
+            mass_ratio=0.6,
+            steps_used=500,
+            response_length=120,
+            has_think_tag=True,
+            has_action_tag=True,
+        )
+        assert m.total_reward == 0.75
+        assert m.parse_method == "xml_json"
+        assert m.success is True
+        assert m.final_a_km == 42164.0
+
+    def test_tracker_record_and_summary(self):
+        from loka.rl.metrics import MetricsTracker, SampleMetrics
+
+        tracker = MetricsTracker(flush_every=1000, enabled=True)
+        for i in range(10):
+            tracker.record(SampleMetrics(
+                total_reward=float(i) / 10,
+                format_reward=0.1,
+                physics_reward=float(i) / 10 - 0.1,
+                parse_method="xml_json" if i % 2 == 0 else "bare_json",
+                response_length=100 + i,
+                has_think_tag=True,
+                has_action_tag=True,
+            ))
+
+        summary = tracker.get_summary()
+        assert "loka/reward/total_mean" in summary
+        assert "loka/reward/format_mean" in summary
+        assert "loka/reward/physics_mean" in summary
+        assert "loka/parse/xml_json_rate" in summary
+        assert "loka/parse/bare_json_rate" in summary
+        assert "loka/format/think_rate" in summary
+        assert "loka/format/action_rate" in summary
+        assert "loka/response/length_mean" in summary
+
+        # Check computed values
+        assert abs(summary["loka/reward/format_mean"] - 0.1) < 1e-6
+        assert abs(summary["loka/parse/xml_json_rate"] - 0.5) < 1e-6
+        assert abs(summary["loka/parse/bare_json_rate"] - 0.5) < 1e-6
+        assert summary["loka/format/think_rate"] == 1.0
+        assert summary["loka/format/action_rate"] == 1.0
+
+    def test_tracker_orbital_metrics(self):
+        from loka.rl.metrics import MetricsTracker, SampleMetrics
+
+        tracker = MetricsTracker(flush_every=1000, enabled=True)
+        tracker.record(SampleMetrics(
+            total_reward=0.8,
+            format_reward=0.15,
+            physics_reward=0.65,
+            parse_method="xml_json",
+            success=True,
+            final_a_km=42164.0,
+            final_e=0.001,
+            dv_total_kms=4.0,
+            dv_hohmann_kms=3.854,
+            mass_ratio=0.55,
+            steps_used=800,
+            response_length=150,
+            has_think_tag=True,
+            has_action_tag=True,
+        ))
+        tracker.record(SampleMetrics(
+            total_reward=0.1,
+            format_reward=0.1,
+            physics_reward=0.0,
+            parse_method="fallback",
+            success=False,
+            final_a_km=7000.0,
+            final_e=0.3,
+            steps_used=200,
+            response_length=30,
+            has_think_tag=False,
+            has_action_tag=False,
+        ))
+
+        summary = tracker.get_summary()
+        assert summary["loka/orbital/success_rate"] == 0.5
+        # Only 1 successful episode with both dv values
+        assert abs(summary["loka/orbital/dv_efficiency_mean"] - 3.854 / 4.0) < 1e-4
+        assert abs(summary["loka/orbital/final_a_mean_km"] - (42164.0 + 7000.0) / 2) < 1
+        assert abs(summary["loka/orbital/steps_mean"] - 500.0) < 1e-6
+        assert summary["loka/orbital/steps_max"] == 800
+
+    def test_tracker_empty_summary(self):
+        from loka.rl.metrics import MetricsTracker
+        tracker = MetricsTracker(flush_every=1000, enabled=True)
+        assert tracker.get_summary() == {}
+
+    def test_tracker_disabled_noop(self):
+        from loka.rl.metrics import MetricsTracker, SampleMetrics
+        tracker = MetricsTracker(enabled=False)
+        tracker.record(SampleMetrics(total_reward=0.5))
+        assert tracker.get_summary() == {}
+
+    def test_compute_score_records_metrics(self):
+        """compute_score should record to the global tracker."""
+        from loka.rl.reward import compute_score
+        from loka.rl import metrics as metrics_mod
+
+        # Replace the global tracker with a test one
+        old_tracker = metrics_mod._tracker
+        test_tracker = metrics_mod.MetricsTracker(flush_every=10000, enabled=True)
+        metrics_mod._tracker = test_tracker
+
+        try:
+            gt = json.dumps({"a_target": 42164, "e_target": 0, "dv_hohmann": 3.94,
+                             "max_steps": 10000, "initial_state": [0]*8})
+            text = '<think>Go</think>\n<action>{"thrust":0.5,"angle":0}</action>'
+            compute_score("test", text, gt, extra_info={
+                "mission_reward": 100.0,
+                "success": True,
+                "a": 42100.0,
+                "e": 0.01,
+                "dv_total": 4.1,
+                "mass_ratio": 0.58,
+                "steps_used": 750,
+            })
+
+            summary = test_tracker.get_summary()
+            assert summary["loka/reward/total_mean"] > 0
+            assert summary["loka/reward/format_mean"] > 0
+            assert summary["loka/reward/physics_mean"] > 0
+            assert summary["loka/parse/xml_json_rate"] == 1.0
+            assert summary["loka/orbital/success_rate"] == 1.0
+            assert abs(summary["loka/orbital/final_a_mean_km"] - 42100.0) < 1
+        finally:
+            metrics_mod._tracker = old_tracker

@@ -36,6 +36,10 @@ export LOKA_MODEL_DIR="${LOKA_MODEL_DIR:-/scratch/$USER/loka/models}"
 export LOKA_CACHE_DIR="${LOKA_CACHE_DIR:-/scratch/$USER/loka/cache}"
 export HF_HOME="$LOKA_CACHE_DIR/huggingface"
 
+# Weights & Biases
+export WANDB_API_KEY="${WANDB_API_KEY:?Set WANDB_API_KEY before submitting this job}"
+export WANDB_PROJECT="${WANDB_PROJECT:-orbital_rl}"
+
 # NCCL / CUDA / vLLM
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export NCCL_CROSS_NIC=1
@@ -60,7 +64,10 @@ echo "Head node: $HEAD_NODE ($HEAD_ADDR:$RAY_PORT)"
 # Head
 srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
     ray start --head --port=$RAY_PORT \
-    --num-cpus=64 --num-gpus=8 --block &
+    --num-cpus=64 --num-gpus=8 \
+    --dashboard-host=0.0.0.0 --include-dashboard=true --block &
+
+echo "Ray Dashboard: http://${HEAD_ADDR}:8265"
 
 sleep 15  # give head time to bind
 

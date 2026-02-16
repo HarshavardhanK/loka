@@ -4,6 +4,11 @@ Verl-compatible reward function for orbital mechanics GRPO training.
 This module is referenced via ``custom_reward_function.path`` in the Verl
 launch config.  Verl calls :func:`compute_score` after each rollout to
 score the LLM's text response.
+
+In addition to returning the scalar reward, each call records decomposed
+metrics (format, physics, orbital elements, parse method) to the global
+:class:`~loka.rl.metrics.MetricsTracker`, which flushes aggregated
+summaries to Weights & Biases every batch.
 """
 
 import re
@@ -12,6 +17,7 @@ import numpy as np
 from pydantic import BaseModel, ValidationError
 
 from loka.rl.bridge import ActionParser
+from loka.rl.metrics import SampleMetrics, get_tracker
 
 
 # ── Pydantic model for ground-truth payload ──────────────────────────
@@ -55,7 +61,8 @@ def compute_score(
     ground_truth : str
         JSON string with initial state, target parameters, and env config.
     extra_info : dict, optional
-        May contain ``"mission_reward"`` from environment simulation.
+        May contain ``"mission_reward"`` from environment simulation,
+        plus orbital element data (``a``, ``e``, ``dv_total``, etc.).
 
     Returns
     -------
@@ -87,11 +94,40 @@ def compute_score(
     _action_arr, _parse_reward, method = _PARSER.parse(solution_str)
     if method == "xml_json":
         format_score += 0.05
-    reward += max(0.0, format_score)
+    format_score = max(0.0, format_score)
+    reward += format_score
 
     # ── Physics simulation (0.0 – 0.8) ───────────────────────────────
+    physics_score = 0.0
     if extra_info and "mission_reward" in extra_info:
         mission_r = float(extra_info["mission_reward"])
-        reward += 0.8 * np.clip(mission_r / 160.0, -1.0, 1.0)
+        physics_score = 0.8 * np.clip(mission_r / 160.0, -1.0, 1.0)
+    reward += physics_score
 
-    return float(np.clip(reward, -1.0, 1.0))
+    total_reward = float(np.clip(reward, -1.0, 1.0))
+
+    # ── Record decomposed metrics ────────────────────────────────────
+    tracker = get_tracker()
+    sample = SampleMetrics(
+        total_reward=total_reward,
+        format_reward=format_score,
+        physics_reward=physics_score,
+        parse_method=method,
+        response_length=len(solution_str),
+        has_think_tag=has_think,
+        has_action_tag=has_action,
+    )
+
+    # Extract orbital mechanics data from extra_info
+    if extra_info:
+        sample.success = extra_info.get("success")
+        sample.final_a_km = extra_info.get("a")
+        sample.final_e = extra_info.get("e")
+        sample.dv_total_kms = extra_info.get("dv_total")
+        sample.dv_hohmann_kms = extra_info.get("dv_hohmann", _gt.dv_hohmann)
+        sample.mass_ratio = extra_info.get("mass_ratio")
+        sample.steps_used = extra_info.get("steps_used")
+
+    tracker.record(sample)
+
+    return total_reward

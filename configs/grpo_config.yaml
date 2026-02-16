@@ -89,3 +89,22 @@ trainer:
   save_freq: 50
   val_before_train: true
   total_epochs: 3
+
+# ── Logging & Monitoring ─────────────────────────────────────────────
+# Verl logs to wandb automatically when trainer.logger=wandb.
+# Built-in metrics:
+#   train/policy_loss, train/kl_divergence, train/entropy,
+#   train/mean_reward, train/gradient_norm, train/learning_rate,
+#   train/clip_fraction, train/response_length
+#
+# Loka adds domain-specific metrics via src/loka/rl/metrics.py:
+#   loka/reward/*       — reward decomposition (format vs physics)
+#   loka/parse/*        — action parsing method rates
+#   loka/format/*       — XML/JSON compliance rates
+#   loka/orbital/*      — success rate, ΔV efficiency, final elements
+#   loka/response/*     — response length distribution
+#
+# Ray Dashboard (GPU/task monitoring):
+#   Exposed on head node port 8265 when --include-dashboard=true.
+#   Access via: ssh -L 8265:<head-ip>:8265 <login-node>
+#   Or:         kubectl port-forward svc/loka-rl-head-svc 8265:8265

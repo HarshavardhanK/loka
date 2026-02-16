@@ -51,6 +51,7 @@ These are **not** used by CI/CD but are needed when running training jobs on the
 2. **For SLURM:** Export it before submitting the job:
    ```bash
    export WANDB_API_KEY="your-key-here"
+   export WANDB_PROJECT="orbital_rl"        # optional, defaults to orbital_rl
    sbatch scripts/train_grpo_native.slurm
    ```
 3. **For Kubernetes:** Create the secret:
@@ -61,14 +62,76 @@ These are **not** used by CI/CD but are needed when running training jobs on the
    ```
 4. **For GitHub Actions** (if you add wandb to CI tests later): add `WANDB_API_KEY` as a repository secret.
 
+#### What gets logged
+
+**Verl built-in metrics** (logged by `trainer.logger=wandb`):
+
+| Metric | Description |
+|--------|-------------|
+| `train/policy_loss` | GRPO policy gradient loss |
+| `train/kl_divergence` | KL between policy and reference model |
+| `train/entropy` | Policy entropy (exploration measure) |
+| `train/mean_reward` | Mean scalar reward across batch |
+| `train/gradient_norm` | Global gradient norm (pre-clipping) |
+| `train/learning_rate` | Current LR (cosine schedule) |
+| `train/clip_fraction` | Fraction of samples clipped by PPO/GRPO |
+| `train/response_length` | Mean token length of LLM responses |
+
+**Loka domain-specific metrics** (logged via `src/loka/rl/metrics.py`):
+
+| Metric | Description |
+|--------|-------------|
+| **Reward decomposition** | |
+| `loka/reward/total_mean` | Mean total reward |
+| `loka/reward/total_std` | Reward standard deviation |
+| `loka/reward/total_min` | Min reward in batch |
+| `loka/reward/total_max` | Max reward in batch |
+| `loka/reward/format_mean` | Mean format compliance reward (0–0.2) |
+| `loka/reward/physics_mean` | Mean physics simulation reward (0–0.8) |
+| **Parsing quality** | |
+| `loka/parse/xml_json_rate` | Fraction using perfect XML+JSON format |
+| `loka/parse/bare_json_rate` | Fraction with bare JSON (no XML tags) |
+| `loka/parse/regex_rate` | Fraction needing regex fallback |
+| `loka/parse/fallback_rate` | Fraction with unparseable output (coast) |
+| **Format compliance** | |
+| `loka/format/think_rate` | Fraction of responses with `<think>` tags |
+| `loka/format/action_rate` | Fraction of responses with `<action>` tags |
+| `loka/format/perfect_rate` | Fraction with both `<think>` + valid XML+JSON |
+| **Orbital mechanics** | |
+| `loka/orbital/success_rate` | Mission success rate |
+| `loka/orbital/dv_efficiency_mean` | ΔV efficiency (Hohmann / actual), 1.0 = optimal |
+| `loka/orbital/dv_efficiency_std` | Efficiency std dev |
+| `loka/orbital/dv_total_mean_kms` | Mean actual ΔV used (km/s) |
+| `loka/orbital/final_a_mean_km` | Mean final semi-major axis (km) |
+| `loka/orbital/final_e_mean` | Mean final eccentricity |
+| `loka/orbital/mass_ratio_mean` | Mean remaining mass fraction |
+| `loka/orbital/steps_mean` | Mean episode length |
+| `loka/orbital/steps_max` | Max episode length in batch |
+| **Throughput** | |
+| `loka/response/length_mean` | Mean response character length |
+| `loka/response/length_max` | Max response character length |
+| `loka/throughput_samples_per_min` | Training throughput |
+
 ### Ray Dashboard Access
 
-The Ray dashboard runs on port **8265** on the head node. Both SLURM scripts start it with `--dashboard-host=0.0.0.0`.
+The Ray dashboard runs on port **8265** on the head node. All SLURM scripts start it with `--dashboard-host=0.0.0.0 --include-dashboard=true`.
+
+#### What the dashboard shows
+
+| Tab | Metrics |
+|-----|---------|
+| **Cluster** | Node count, CPU/GPU utilization, memory usage, object store |
+| **Jobs** | Running/pending/finished jobs, duration, error logs |
+| **Actors** | Verl workers (actor, rollout, ref), placement groups, restarts |
+| **Logs** | Live streaming logs from all workers |
+| **Metrics** | System metrics: GPU util%, GPU memory, network I/O, disk I/O |
 
 #### SLURM — SSH tunnel
 
 ```bash
-# Find which node is the head (first node in the allocation)
+# The head node IP is printed in the job stdout:
+#   "Ray Dashboard: http://<HEAD_IP>:8265"
+# You can also find the head from SLURM:
 HEAD_NODE=$(squeue -j <JOB_ID> -o "%N" -h | cut -d',' -f1)
 
 # Open an SSH tunnel through the login node
@@ -80,12 +143,10 @@ Then open [http://localhost:8265](http://localhost:8265) in your browser.
 #### Kubernetes — port-forward
 
 ```bash
-kubectl -n loka port-forward svc/loka-rl-head 8265:8265
+kubectl -n loka port-forward svc/loka-rl-head-svc 8265:8265
 ```
 
 Then open [http://localhost:8265](http://localhost:8265) in your browser.
-
-The dashboard shows: cluster resources, running/pending tasks, GPU utilization, actor logs, and job timeline.
 
 ---
 

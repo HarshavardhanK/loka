@@ -40,6 +40,7 @@ export HF_HOME="${LOKA_CACHE_DIR}/huggingface"
 
 # WANDB_API_KEY: set via environment before submission
 export WANDB_API_KEY="${WANDB_API_KEY:?Set WANDB_API_KEY before submitting this job}"
+export WANDB_PROJECT="${WANDB_PROJECT:-orbital_rl}"
 
 # Make source importable
 export PYTHONPATH="${LOKA_ROOT}/src:${PYTHONPATH:-}"
@@ -83,6 +84,7 @@ srun --nodes=1 --ntasks=1 -w "${HEAD_NODE}" --gres=gpu:8 \
     --num-cpus=96 --num-gpus=8 \
     --dashboard-host=0.0.0.0 --include-dashboard=true --block &
 
+echo "Ray Dashboard: http://${HEAD_ADDR}:8265"
 sleep 30  # give head time to bind
 
 # Workers

@@ -37,6 +37,7 @@ export HF_TOKEN="${HF_TOKEN:?Set HF_TOKEN before submitting this job}"
 
 # WANDB_API_KEY: set via environment or `wandb login` before submission
 export WANDB_API_KEY="${WANDB_API_KEY:?Set WANDB_API_KEY before submitting this job}"
+export WANDB_PROJECT="${WANDB_PROJECT:-orbital_rl}"
 
 # site-packages FIRST so verl/vllm-compatible transformers 4.57.x
 # takes priority over system's transformers 5.1.0 (which removed
@@ -81,6 +82,7 @@ srun --nodes=1 --ntasks=1 -w "${HEAD_NODE}" --gres=gpu:8 \
     --num-cpus=96 --num-gpus=8 \
     --dashboard-host=0.0.0.0 --include-dashboard=true --block &
 
+echo "Ray Dashboard: http://${HEAD_ADDR}:8265"
 sleep 20  # give head time to bind
 
 # Workers

@@ -13,6 +13,12 @@ from loka.rl.evaluation import (
     EfficiencyResult,
     AltitudeResult,
 )
+from loka.rl.metrics import (
+    MetricsTracker,
+    SampleMetrics,
+    get_tracker,
+    init_wandb_run,
+)
 
 __all__ = [
     "SYSTEM_PROMPT",
@@ -26,4 +32,8 @@ __all__ = [
     "GeneralizationResult",
     "EfficiencyResult",
     "AltitudeResult",
+    "MetricsTracker",
+    "SampleMetrics",
+    "get_tracker",
+    "init_wandb_run",
 ]
