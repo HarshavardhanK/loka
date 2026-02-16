@@ -1,55 +1,36 @@
-# Loka Inference Server
-# Optimized for serving the trained model
+# =============================================================================
+# Loka Inference Server — vLLM OpenAI-compatible API
+# =============================================================================
+# vLLM bundles torch, transformers, safetensors, and its own optimized
+# attention kernels.  We only add the loka package for tool-use support
+# (astro calculations, ephemeris lookups).
+# =============================================================================
 
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM vllm/vllm-openai:latest
 
-ENV DEBIAN_FRONTEND=noninteractive
+USER root
+
+# --- Loka tool-use dependencies (astro module) ------------------------------
+RUN pip install --no-cache-dir \
+    "astropy>=6.0,<7" \
+    "jplephem>=2.18" \
+    "scipy>=1.13" \
+    "pydantic>=2.0"
+
+# --- Install loka package (tools only, no training deps) --------------------
+WORKDIR /code/loka
+COPY . .
+RUN pip install --no-cache-dir --no-deps -e .
+
+# --- Defaults (override at runtime) -----------------------------------------
+ENV VLLM_ATTENTION_BACKEND=FLASH_ATTN
 ENV PYTHONUNBUFFERED=1
 
-# Install minimal dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install miniforge
-ENV CONDA_DIR=/opt/conda
-RUN curl -sL https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -o /tmp/miniforge.sh \
-    && bash /tmp/miniforge.sh -b -p $CONDA_DIR \
-    && rm /tmp/miniforge.sh
-ENV PATH=$CONDA_DIR/bin:$PATH
-
-WORKDIR /app
-
-# Install production dependencies only
-RUN conda install -y -c conda-forge \
-    python=3.11 \
-    numpy \
-    scipy \
-    astropy \
-    jplephem \
-    && conda clean -afy
-
-# Install PyTorch (inference optimized)
-RUN pip install --no-cache-dir \
-    torch>=2.0 \
-    transformers>=4.40 \
-    accelerate \
-    safetensors \
-    vllm \
-    fastapi \
-    uvicorn[standard]
-
-# Copy application
-COPY src/ src/
-COPY pyproject.toml .
-RUN pip install -e .
-
-# Copy model (or mount at runtime)
-# COPY models/ /models/
-
-ENV LOKA_MODEL_DIR=/models
+# Model path — mount or bake in at build time
+ENV MODEL_PATH=/models
 
 EXPOSE 8000
 
-CMD ["uvicorn", "loka.serve:app", "--host", "0.0.0.0", "--port", "8000"]
+# vLLM's built-in OpenAI-compatible server
+# Override MODEL_PATH at runtime: docker run -e MODEL_PATH=/path/to/model
+CMD ["sh", "-c", "vllm serve ${MODEL_PATH} --host 0.0.0.0 --port 8000 --trust-remote-code"]

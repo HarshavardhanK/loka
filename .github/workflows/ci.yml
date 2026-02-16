@@ -114,7 +114,6 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       # ── RL training image tags ─────────────────────────────────────
-      # Same semver logic but prefixed with "rl-" for the training image
       - name: RL training image metadata
         id: meta-rl
         uses: docker/metadata-action@v5
@@ -126,6 +125,19 @@ jobs:
             type=raw,value=rl-train,enable={{is_default_branch}}
             type=ref,event=branch,prefix=rl-
             type=sha,prefix=rl-sha-
+
+      # ── Inference image tags ─────────────────────────────────────
+      - name: Inference image metadata
+        id: meta-infer
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/loka
+          tags: |
+            type=semver,pattern=infer-{{version}}
+            type=semver,pattern=infer-{{major}}.{{minor}}
+            type=raw,value=infer-latest,enable={{is_default_branch}}
+            type=ref,event=branch,prefix=infer-
+            type=sha,prefix=infer-sha-
 
       # ── Build & push production image ──────────────────────────────
       - name: Build & push production image
@@ -152,4 +164,17 @@ jobs:
           labels: ${{ steps.meta-rl.outputs.labels }}
           cache-from: type=gha,scope=rl
           cache-to: type=gha,mode=max,scope=rl
+          platforms: linux/amd64
+
+      # ── Build & push inference image ───────────────────────────────
+      - name: Build & push inference image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.inference
+          push: true
+          tags: ${{ steps.meta-infer.outputs.tags }}
+          labels: ${{ steps.meta-infer.outputs.labels }}
+          cache-from: type=gha,scope=infer
+          cache-to: type=gha,mode=max,scope=infer
           platforms: linux/amd64
