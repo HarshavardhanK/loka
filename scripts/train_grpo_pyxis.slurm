@@ -122,7 +122,7 @@ python3 -m verl.trainer.main_ppo \
     data.truncation=error \
     \
     actor_rollout_ref.hybrid_engine=True \
-    actor_rollout_ref.model.path=meta-llama/Llama-3.1-8B-Instruct \
+    actor_rollout_ref.model.path=Qwen/Qwen2.5-7B-Instruct \
     actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2 \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.use_remove_padding=True \

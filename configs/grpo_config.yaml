@@ -26,7 +26,7 @@ actor_rollout_ref:
   hybrid_engine: true
 
   model:
-    path: meta-llama/Llama-3.1-8B-Instruct
+    path: Qwen/Qwen2.5-7B-Instruct
     override_config:
       attn_implementation: flash_attention_2
     enable_gradient_checkpointing: true
