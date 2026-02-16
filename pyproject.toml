@@ -79,9 +79,9 @@ all = [
 loka = "loka.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/loka"
+Homepage = "https://github.com/HarshavardhanK/loka"
 Documentation = "https://loka.readthedocs.io"
-Repository = "https://github.com/your-org/loka"
+Repository = "https://github.com/HarshavardhanK/loka"
 
 [tool.setuptools.packages.find]
 where = ["src"]

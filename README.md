@@ -50,7 +50,7 @@ Loka is a specialized small language model (SLM) trained for:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/loka.git
+git clone https://github.com/HarshavardhanK/loka.git
 cd loka
 
 # Create conda environment
@@ -143,7 +143,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-Apache 2.0
+MIT
 
 ## References
 

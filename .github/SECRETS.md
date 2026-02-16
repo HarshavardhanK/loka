@@ -134,8 +134,8 @@ The Ray dashboard runs on port **8265** on the head node. All SLURM scripts star
 # You can also find the head from SLURM:
 HEAD_NODE=$(squeue -j <JOB_ID> -o "%N" -h | cut -d',' -f1)
 
-# Open an SSH tunnel through the login node
-ssh -L 8265:${HEAD_NODE}:8265 login-0
+# Open an SSH tunnel through your cluster's login node
+ssh -L 8265:${HEAD_NODE}:8265 <login-node>
 ```
 
 Then open [http://localhost:8265](http://localhost:8265) in your browser.

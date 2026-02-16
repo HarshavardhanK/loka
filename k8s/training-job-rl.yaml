@@ -49,8 +49,8 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: rl-head
-          # Set this to your registry: ghcr.io/OWNER/loka:rl-train
-          image: ghcr.io/OWNER/loka:rl-train
+          # Set this to your registry, e.g.: ghcr.io/<your-username>/loka:rl-train
+          image: ghcr.io/REPLACE_ME/loka:rl-train
           imagePullPolicy: Always
           command:
             - /bin/bash
@@ -202,8 +202,8 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: rl-worker
-          # Set this to your registry: ghcr.io/OWNER/loka:rl-train
-          image: ghcr.io/OWNER/loka:rl-train
+          # Set this to your registry, e.g.: ghcr.io/<your-username>/loka:rl-train
+          image: ghcr.io/REPLACE_ME/loka:rl-train
           imagePullPolicy: Always
           command:
             - /bin/bash

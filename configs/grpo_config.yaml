@@ -13,8 +13,8 @@ algorithm:
 
 # ── Data ──────────────────────────────────────────────────────────────
 data:
-  train_files: /data/orbital/train.parquet
-  val_files: /data/orbital/val.parquet
+  train_files: ${LOKA_DATA_DIR}/orbital/train.parquet
+  val_files: ${LOKA_DATA_DIR}/orbital/val.parquet
   train_batch_size: 256
   max_prompt_length: 512
   max_response_length: 1024

@@ -12,8 +12,7 @@
 
 # =============================================================================
 # GRPO Training on 2×8 H100 GPUs — native worker env + Ray + Verl
-# Uses the SLURM worker's pre-installed PyTorch/Ray/Transformers stack,
-# with additional RL packages installed to /data shared storage.
+# Uses the SLURM worker's pre-installed PyTorch/Ray/Transformers stack.
 # =============================================================================
 
 set -euo pipefail
@@ -27,7 +26,7 @@ echo "Start time   : $(date)"
 echo "=============================================="
 
 # ── Paths ────────────────────────────────────────────────────────────
-LOKA_ROOT="${LOKA_ROOT:-/data/users/${USER}/loka}"
+LOKA_ROOT="${LOKA_ROOT:-/scratch/${USER}/loka}"
 export LOKA_DATA_DIR="${LOKA_ROOT}/data"
 export LOKA_MODEL_DIR="${LOKA_ROOT}/checkpoints"
 export LOKA_CACHE_DIR="${LOKA_ROOT}/cache"
@@ -39,10 +38,9 @@ export HF_TOKEN="${HF_TOKEN:?Set HF_TOKEN before submitting this job}"
 export WANDB_API_KEY="${WANDB_API_KEY:?Set WANDB_API_KEY before submitting this job}"
 export WANDB_PROJECT="${WANDB_PROJECT:-orbital_rl}"
 
-# site-packages FIRST so verl/vllm-compatible transformers 4.57.x
-# takes priority over system's transformers 5.1.0 (which removed
-# AutoModelForVision2Seq that verl requires).
-export PYTHONPATH="${LOKA_ROOT}/site-packages:${LOKA_ROOT}/src:${PYTHONPATH:-}"
+# If you installed extra packages to a local site-packages dir, prepend it:
+# export PYTHONPATH="${LOKA_ROOT}/site-packages:${PYTHONPATH:-}"
+export PYTHONPATH="${LOKA_ROOT}/src:${PYTHONPATH:-}"
 
 # ── NCCL / CUDA / vLLM ──────────────────────────────────────────────
 export CUDA_DEVICE_MAX_CONNECTIONS=1

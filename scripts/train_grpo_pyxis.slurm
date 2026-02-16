@@ -12,8 +12,8 @@
 #
 # --- Pyxis / enroot container ---
 # Set LOKA_CONTAINER_IMAGE in your environment or override here
-#SBATCH --container-image=${LOKA_CONTAINER_IMAGE:-ghcr.io/OWNER/loka:rl-train}
-#SBATCH --container-mounts=/data:/data
+#SBATCH --container-image=${LOKA_CONTAINER_IMAGE:-ghcr.io/<your-username>/loka:rl-train}
+#SBATCH --container-mounts=/scratch:/scratch
 #SBATCH --container-writable
 #SBATCH --no-container-entrypoint
 
@@ -32,7 +32,7 @@ echo "Start time   : $(date)"
 echo "=============================================="
 
 # ── Paths ────────────────────────────────────────────────────────────
-LOKA_ROOT="${LOKA_ROOT:-/data/users/${USER}/loka}"
+LOKA_ROOT="${LOKA_ROOT:-/scratch/${USER}/loka}"
 export LOKA_DATA_DIR="${LOKA_ROOT}/data"
 export LOKA_MODEL_DIR="${LOKA_ROOT}/checkpoints"
 export LOKA_CACHE_DIR="${LOKA_ROOT}/cache"
