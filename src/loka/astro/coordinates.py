@@ -20,6 +20,16 @@ from astropy.coordinates import (
 )
 from astropy.time import Time
 
+
+def ensure_time(epoch: Union[str, datetime, Time]) -> Time:
+    """Convert any epoch representation to an astropy ``Time`` object.
+
+    Accepts ISO strings, ``datetime`` objects, or ``Time`` pass-through.
+    """
+    if isinstance(epoch, Time):
+        return epoch
+    return Time(epoch)
+
 # Supported solar system bodies
 SOLAR_SYSTEM_BODIES = [
     "sun",
@@ -59,14 +69,7 @@ def get_body_position(
         >>> pos = get_body_position("mars", "2026-07-01")
         >>> print(f"Mars position: {pos}")
     """
-    # Convert epoch to astropy Time
-    if isinstance(epoch, str):
-        t = Time(epoch)
-    elif isinstance(epoch, datetime):
-        t = Time(epoch)
-    else:
-        t = epoch
-    
+    t = ensure_time(epoch)
     body_lower = body.lower()
     if body_lower not in SOLAR_SYSTEM_BODIES:
         raise ValueError(f"Unknown body: {body}. Must be one of {SOLAR_SYSTEM_BODIES}")
@@ -113,14 +116,8 @@ def transform_coordinates(
     Returns:
         Transformed (position, velocity) tuple.
     """
-    # Convert epoch
-    if isinstance(epoch, str):
-        t = Time(epoch)
-    elif isinstance(epoch, datetime):
-        t = Time(epoch)
-    else:
-        t = epoch
-    
+    t = ensure_time(epoch)
+
     # Create CartesianRepresentation
     cart = CartesianRepresentation(
         x=position[0] * u.km,

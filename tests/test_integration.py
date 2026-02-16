@@ -241,7 +241,7 @@ class TestHohmannEnvConsistency:
         baseline = hohmann_baseline(alt_leo_km=400.0)
 
         # Both should produce the same delta-V to within 0.1%
-        assert abs(env.dv_hohmann - baseline["dv_total_kms"]) / env.dv_hohmann < 0.001
+        assert abs(env.dv_hohmann - baseline.dv_total_kms) / env.dv_hohmann < 0.001
 
     def test_hohmann_at_different_altitudes(self):
         """Env and baseline agree across multiple LEO altitudes."""
@@ -251,18 +251,18 @@ class TestHohmannEnvConsistency:
         for alt in [200, 400, 600, 800, 1000]:
             env = OrbitalTransferEnv(config={"alt_leo": alt})
             baseline = hohmann_baseline(alt_leo_km=alt)
-            assert abs(env.dv_hohmann - baseline["dv_total_kms"]) / env.dv_hohmann < 0.001, (
+            assert abs(env.dv_hohmann - baseline.dv_total_kms) / env.dv_hohmann < 0.001, (
                 f"Mismatch at {alt} km: env={env.dv_hohmann:.4f}, "
-                f"baseline={baseline['dv_total_kms']:.4f}"
+                f"baseline={baseline.dv_total_kms:.4f}"
             )
 
     def test_higher_leo_needs_less_dv(self):
         """Higher LEO → closer to GEO → less delta-V."""
         from loka.astro.hohmann import hohmann_baseline
 
-        dv_200 = hohmann_baseline(alt_leo_km=200.0)["dv_total_kms"]
-        dv_400 = hohmann_baseline(alt_leo_km=400.0)["dv_total_kms"]
-        dv_800 = hohmann_baseline(alt_leo_km=800.0)["dv_total_kms"]
+        dv_200 = hohmann_baseline(alt_leo_km=200.0).dv_total_kms
+        dv_400 = hohmann_baseline(alt_leo_km=400.0).dv_total_kms
+        dv_800 = hohmann_baseline(alt_leo_km=800.0).dv_total_kms
         assert dv_200 > dv_400 > dv_800
 
     def test_fuel_fraction_ordering(self):
@@ -270,7 +270,7 @@ class TestHohmannEnvConsistency:
         from loka.astro.hohmann import hohmann_baseline
 
         result = hohmann_baseline()
-        ff = result["fuel_fractions"]
+        ff = result.fuel_fractions
         # Chemical (300 s) > Hall-effect (1500 s) > Ion (3000 s)
         assert ff["Isp_300s"] > ff["Isp_1500s"] > ff["Isp_3000s"]
 

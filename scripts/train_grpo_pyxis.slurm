@@ -83,7 +83,7 @@ srun --nodes=1 --ntasks=1 -w "${HEAD_NODE}" --gres=gpu:8 \
     --num-cpus=96 --num-gpus=8 \
     --dashboard-host=0.0.0.0 --include-dashboard=true --block &
 
-sleep 20  # give head time to bind
+sleep 30  # give head time to bind
 
 # Workers
 for node in "${NODELIST[@]:1}"; do
@@ -93,7 +93,7 @@ for node in "${NODELIST[@]:1}"; do
         --num-cpus=96 --num-gpus=8 --block &
 done
 
-sleep 25  # let workers join
+sleep 30  # let workers join
 
 echo "Ray cluster status:"
 ray status || true

@@ -235,21 +235,21 @@ class TestHohmannBaseline:
         from loka.astro.hohmann import hohmann_baseline
         result = hohmann_baseline()
         # LEO 400 km -> GEO: ~3.854 km/s
-        assert abs(result["dv_total_kms"] - 3.854) < 0.01
+        assert abs(result.dv_total_kms - 3.854) < 0.01
 
     def test_transfer_time_hours(self):
         from loka.astro.hohmann import hohmann_baseline
         result = hohmann_baseline()
         # ~5.2–5.3 hours for LEO→GEO Hohmann
-        assert 5.0 < result["transfer_time_hours"] < 5.5
+        assert 5.0 < result.transfer_time_hours < 5.5
 
     def test_fuel_fractions_keys(self):
         from loka.astro.hohmann import hohmann_baseline
         result = hohmann_baseline()
-        assert "Isp_300s" in result["fuel_fractions"]
-        assert "Isp_3000s" in result["fuel_fractions"]
+        assert "Isp_300s" in result.fuel_fractions
+        assert "Isp_3000s" in result.fuel_fractions
         # Electric propulsion should need much less fuel
-        assert result["fuel_fractions"]["Isp_3000s"] < result["fuel_fractions"]["Isp_300s"]
+        assert result.fuel_fractions["Isp_3000s"] < result.fuel_fractions["Isp_300s"]
 
 
 # =====================================================================

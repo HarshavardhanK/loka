@@ -10,6 +10,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from numba import njit
+from pydantic import BaseModel, Field
 
 
 # ── Numba-accelerated dynamics for rollout speed ──────────────────────
@@ -109,6 +110,33 @@ def _state_to_elements(x, y, vx, vy, mu):
     return a, e, r, v
 
 
+class EnvConfig(BaseModel):
+    """Validated configuration for :class:`OrbitalTransferEnv`.
+
+    All fields have sensible defaults; pass overrides as keyword
+    arguments or as a dict.  Pydantic handles type coercion and
+    validation automatically.
+    """
+
+    # Mission
+    alt_leo: float = Field(400.0, description="LEO altitude above surface (km)")
+    # Spacecraft
+    mass_kg: float = Field(2000.0, gt=0, description="Wet mass (kg)")
+    thrust_N: float = Field(0.5, ge=0, description="Max thrust (Newtons)")
+    Isp_s: float = Field(3000.0, gt=0, description="Specific impulse (s)")
+    # Simulation timing
+    dt_inner: float = Field(60.0, gt=0, description="RK4 step size (s)")
+    n_substeps: int = Field(5, ge=1, description="RK4 steps per RL action")
+    max_steps: int = Field(10000, ge=1, description="Max episode steps")
+    # Reward weights
+    w_a: float = Field(10.0, description="Semi-major axis reward weight")
+    w_e: float = Field(5.0, description="Eccentricity reward weight")
+    w_fuel: float = Field(0.1, description="Fuel penalty weight")
+    w_time: float = Field(0.001, description="Time penalty weight")
+
+    model_config = {"extra": "forbid"}
+
+
 class OrbitalTransferEnv(gym.Env):
     """Coplanar LEO-to-GEO transfer with continuous low-thrust propulsion.
 
@@ -121,17 +149,20 @@ class OrbitalTransferEnv(gym.Env):
 
     Parameters
     ----------
-    config : dict, optional
-        Override default mission and spacecraft parameters.  Recognised keys:
-        ``alt_leo``, ``mass_kg``, ``thrust_N``, ``Isp_s``, ``dt_inner``,
-        ``n_substeps``, ``max_steps``, ``w_a``, ``w_e``, ``w_fuel``, ``w_time``.
+    config : dict or EnvConfig, optional
+        Override default mission and spacecraft parameters.
     """
 
     metadata = {"render_modes": ["human"]}
 
     def __init__(self, config=None):
         super().__init__()
-        cfg = config or {}
+        if isinstance(config, EnvConfig):
+            cfg = config
+        elif isinstance(config, dict):
+            cfg = EnvConfig(**config)
+        else:
+            cfg = EnvConfig()
 
         # ── Physical constants ─────────────────────────────────────────
         self.mu = 3.986004418e5       # km^3/s^2
@@ -139,21 +170,21 @@ class OrbitalTransferEnv(gym.Env):
         self.g0 = 9.80665e-3          # km/s^2
 
         # ── Mission parameters ─────────────────────────────────────────
-        self.r_leo = self.R_earth + cfg.get("alt_leo", 400)
+        self.r_leo = self.R_earth + cfg.alt_leo
         self.r_geo = 42164.0
         self.a_target = self.r_geo    # circular GEO
         self.e_target = 0.0
 
         # ── Spacecraft ─────────────────────────────────────────────────
-        self.m0 = cfg.get("mass_kg", 2000.0)
-        self.T_max = cfg.get("thrust_N", 0.5)       # Newtons
-        self.Isp = cfg.get("Isp_s", 3000.0)         # seconds (electric)
+        self.m0 = cfg.mass_kg
+        self.T_max = cfg.thrust_N
+        self.Isp = cfg.Isp_s
 
         # ── Simulation timing ──────────────────────────────────────────
-        self.dt_inner = cfg.get("dt_inner", 60.0)    # RK4 step (s)
-        self.n_substeps = cfg.get("n_substeps", 5)
-        self.dt_rl = self.dt_inner * self.n_substeps  # 300 s per action
-        self.max_steps = cfg.get("max_steps", 10000)
+        self.dt_inner = cfg.dt_inner
+        self.n_substeps = cfg.n_substeps
+        self.dt_rl = self.dt_inner * self.n_substeps
+        self.max_steps = cfg.max_steps
 
         # ── Safety bounds ──────────────────────────────────────────────
         self.r_min = self.R_earth + 200    # atmospheric reentry
@@ -180,10 +211,10 @@ class OrbitalTransferEnv(gym.Env):
         )
 
         # ── Reward weights ─────────────────────────────────────────────
-        self.w_a = cfg.get("w_a", 10.0)
-        self.w_e = cfg.get("w_e", 5.0)
-        self.w_fuel = cfg.get("w_fuel", 0.1)
-        self.w_time = cfg.get("w_time", 0.001)
+        self.w_a = cfg.w_a
+        self.w_e = cfg.w_e
+        self.w_fuel = cfg.w_fuel
+        self.w_time = cfg.w_time
 
     # ── helpers ────────────────────────────────────────────────────────
 

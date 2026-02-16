@@ -14,6 +14,8 @@ import numpy as np
 from astropy.time import Time
 from astropy import units as u
 
+from loka.astro.coordinates import ensure_time
+
 
 class EphemerisManager:
     """
@@ -96,13 +98,7 @@ class EphemerisManager:
         Returns:
             Tuple of (position, velocity) as numpy arrays in km and km/s.
         """
-        if isinstance(epoch, str):
-            t = Time(epoch)
-        elif isinstance(epoch, datetime):
-            t = Time(epoch)
-        else:
-            t = epoch
-        
+        t = ensure_time(epoch)
         body_lower = body.lower()
         center_lower = center.lower()
         
