@@ -263,26 +263,27 @@ class TestCurriculumScheduler:
         from loka.rl.curriculum import CurriculumScheduler
         sched = CurriculumScheduler()
         mix = sched.get_mix(global_step=10, total_steps=1000)
-        assert mix["circularize"] > mix["hohmann"]
-        assert mix["circularize"] > mix["plane_change"]
+        assert mix.circularize > mix.hohmann
+        assert mix.circularize > mix.plane_change
 
     def test_stage_2_dominated_by_hohmann(self):
         from loka.rl.curriculum import CurriculumScheduler
         sched = CurriculumScheduler()
         mix = sched.get_mix(global_step=500, total_steps=1000)
-        assert mix["hohmann"] > mix["circularize"]
-        assert mix["hohmann"] > mix["plane_change"]
+        assert mix.hohmann > mix.circularize
+        assert mix.hohmann > mix.plane_change
 
     def test_stage_3_dominated_by_plane_change(self):
         from loka.rl.curriculum import CurriculumScheduler
         sched = CurriculumScheduler()
         mix = sched.get_mix(global_step=900, total_steps=1000)
-        assert mix["plane_change"] > mix["circularize"]
-        assert mix["plane_change"] > mix["hohmann"]
+        assert mix.plane_change > mix.circularize
+        assert mix.plane_change > mix.hohmann
 
     def test_mix_sums_to_one(self):
         from loka.rl.curriculum import CurriculumScheduler
         sched = CurriculumScheduler()
         for step in [0, 100, 500, 700, 999]:
             mix = sched.get_mix(step, 1000)
-            assert abs(sum(mix.values()) - 1.0) < 1e-9
+            total = mix.circularize + mix.hohmann + mix.plane_change
+            assert abs(total - 1.0) < 1e-9

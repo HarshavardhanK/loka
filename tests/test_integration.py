@@ -406,8 +406,9 @@ class TestCurriculumEnvIntegration:
         sched = CurriculumScheduler()
         for step in range(0, 1001, 50):
             mix = sched.get_mix(step, 1000)
-            assert all(v >= 0 for v in mix.values()), f"Negative ratio at step {step}"
-            assert abs(sum(mix.values()) - 1.0) < 1e-9, f"Sum != 1 at step {step}"
+            vals = [mix.circularize, mix.hohmann, mix.plane_change]
+            assert all(v >= 0 for v in vals), f"Negative ratio at step {step}"
+            assert abs(sum(vals) - 1.0) < 1e-9, f"Sum != 1 at step {step}"
 
     def test_curriculum_stages_use_valid_env_config_keys(self):
         """All stage config keys are accepted by OrbitalTransferEnv."""
@@ -480,11 +481,11 @@ class TestEvaluationHarness:
             n_episodes=3,
             seed=0,
         )
-        assert "LEO_300km" in results
-        assert "LEO_500km" in results
-        assert "adversarial_perturbation" in results
+        assert "LEO_300km" in results.altitude_tests
+        assert "LEO_500km" in results.altitude_tests
+        assert results.adversarial_perturbation is not None
         # Coast agent should never succeed
-        assert results["LEO_300km"]["success_rate"] == 0.0
+        assert results.altitude_tests["LEO_300km"].success_rate == 0.0
 
     def test_compute_dv_efficiency_dummy(self):
         """compute_dv_efficiency runs with a dummy agent on a short env."""
@@ -503,10 +504,10 @@ class TestEvaluationHarness:
         OrbitalTransferEnv.__init__ = fast_init
         try:
             result = compute_dv_efficiency(agent, n_episodes=3)
-            assert "eta_mean" in result
-            assert "success_rate" in result
+            assert hasattr(result, "eta_mean")
+            assert hasattr(result, "success_rate")
             # Coast agent won't succeed → eta_mean = 0
-            assert result["eta_mean"] == 0.0
+            assert result.eta_mean == 0.0
         finally:
             OrbitalTransferEnv.__init__ = original_init
 
@@ -528,13 +529,12 @@ class TestEvaluationHarness:
         # Should have entries for each altitude test
         for alt in [300, 500, 600, 800]:
             key = f"LEO_{alt}km"
-            assert key in results
-            assert "success_rate" in results[key]
-            assert 0.0 <= results[key]["success_rate"] <= 1.0
+            assert key in results.altitude_tests
+            assert 0.0 <= results.altitude_tests[key].success_rate <= 1.0
 
         # Adversarial perturbation is a single float
-        assert isinstance(results["adversarial_perturbation"], float)
-        assert 0.0 <= results["adversarial_perturbation"] <= 1.0
+        assert isinstance(results.adversarial_perturbation, float)
+        assert 0.0 <= results.adversarial_perturbation <= 1.0
 
 
 # =====================================================================

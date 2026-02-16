@@ -7,7 +7,12 @@ from loka.rl.bridge import (
     ThrustCommand,
 )
 from loka.rl.reward import compute_score
-from loka.rl.curriculum import CurriculumScheduler
+from loka.rl.curriculum import CurriculumScheduler, StageConfig, StageMix
+from loka.rl.evaluation import (
+    GeneralizationResult,
+    EfficiencyResult,
+    AltitudeResult,
+)
 
 __all__ = [
     "SYSTEM_PROMPT",
@@ -16,4 +21,9 @@ __all__ = [
     "ThrustCommand",
     "compute_score",
     "CurriculumScheduler",
+    "StageConfig",
+    "StageMix",
+    "GeneralizationResult",
+    "EfficiencyResult",
+    "AltitudeResult",
 ]

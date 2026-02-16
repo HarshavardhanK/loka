@@ -9,9 +9,36 @@ of reimplementing the math.
 from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from loka.tools.base import Tool, ToolResult
+
+
+# ── Pydantic result models ───────────────────────────────────────────
+
+
+class HohmannTransferResult(BaseModel):
+    """Structured result from a Hohmann transfer computation."""
+
+    transfer_type: Literal["hohmann"] = "hohmann"
+    delta_v1_km_s: float = Field(..., description="First burn ΔV (km/s)")
+    delta_v2_km_s: float = Field(..., description="Second burn ΔV (km/s)")
+    total_delta_v_km_s: float = Field(..., description="Total ΔV (km/s)")
+    transfer_time_days: float = Field(..., description="Transfer time (days)")
+    semi_major_axis_km: float = Field(..., description="Transfer orbit semi-major axis (km)")
+    origin_radius_km: float = Field(..., description="Origin orbital radius (km)")
+    target_radius_km: float = Field(..., description="Target orbital radius (km)")
+
+
+class LambertTransferResult(BaseModel):
+    """Structured result from a Lambert transfer computation."""
+
+    transfer_type: Literal["lambert"] = "lambert"
+    note: str = "Simplified calculation - use poliastro for full Lambert solution"
+    estimated_delta_v_km_s: float = Field(..., description="Estimated total ΔV (km/s)")
+    specified_transfer_time_days: float = Field(..., description="Specified transfer time (days)")
+    origin_radius_km: float = Field(..., description="Origin orbital radius (km)")
+    target_radius_km: float = Field(..., description="Target orbital radius (km)")
 
 
 class TrajectoryTool(Tool):
@@ -94,7 +121,7 @@ class TrajectoryTool(Tool):
                     error=f"Unknown transfer type: {transfer_type}",
                 )
 
-            return ToolResult(success=True, output=result)
+            return ToolResult(success=True, output=result.model_dump())
 
         except Exception as e:
             return ToolResult(success=False, output=None, error=str(e))
@@ -104,14 +131,14 @@ class TrajectoryTool(Tool):
         r1: np.ndarray,
         r2: np.ndarray,
         mu: float,
-    ) -> Dict[str, Any]:
+    ) -> HohmannTransferResult:
         """Compute Hohmann transfer parameters.
 
         Uses vis-viva equation directly with the supplied ``mu``,
         so this works for any central body (Sun, Earth, etc.).
         """
-        r1_mag = np.linalg.norm(r1)
-        r2_mag = np.linalg.norm(r2)
+        r1_mag = float(np.linalg.norm(r1))
+        r2_mag = float(np.linalg.norm(r2))
 
         # Transfer orbit semi-major axis
         a_transfer = (r1_mag + r2_mag) / 2
@@ -127,21 +154,19 @@ class TrajectoryTool(Tool):
         # Delta-V calculations
         delta_v1 = abs(v_transfer_1 - v1_circ)
         delta_v2 = abs(v2_circ - v_transfer_2)
-        delta_v_total = delta_v1 + delta_v2
 
         # Transfer time (half period of transfer orbit)
         transfer_time = np.pi * np.sqrt(a_transfer**3 / mu)
 
-        return {
-            "transfer_type": "hohmann",
-            "delta_v1_km_s": float(delta_v1),
-            "delta_v2_km_s": float(delta_v2),
-            "total_delta_v_km_s": float(delta_v_total),
-            "transfer_time_days": float(transfer_time / 86400),
-            "semi_major_axis_km": float(a_transfer),
-            "origin_radius_km": float(r1_mag),
-            "target_radius_km": float(r2_mag),
-        }
+        return HohmannTransferResult(
+            delta_v1_km_s=float(delta_v1),
+            delta_v2_km_s=float(delta_v2),
+            total_delta_v_km_s=float(delta_v1 + delta_v2),
+            transfer_time_days=float(transfer_time / 86400),
+            semi_major_axis_km=float(a_transfer),
+            origin_radius_km=r1_mag,
+            target_radius_km=r2_mag,
+        )
 
     def _compute_lambert(
         self,
@@ -149,27 +174,22 @@ class TrajectoryTool(Tool):
         r2: np.ndarray,
         tof: float,
         mu: float,
-    ) -> Dict[str, Any]:
+    ) -> LambertTransferResult:
         """
         Compute Lambert transfer parameters.
 
         This is a simplified implementation. For production use,
-        consider using poliastro or a dedicated Lambert solver.
+        consider using poliastro.iod.lambert.
         """
-        # This is a placeholder for the full Lambert solver
-        # In production, use poliastro.iod.lambert
-
-        r1_mag = np.linalg.norm(r1)
-        r2_mag = np.linalg.norm(r2)
+        r1_mag = float(np.linalg.norm(r1))
+        r2_mag = float(np.linalg.norm(r2))
 
         # Approximate using Hohmann for now
         hohmann = self._compute_hohmann(r1, r2, mu)
 
-        return {
-            "transfer_type": "lambert",
-            "note": "Simplified calculation - use poliastro for full Lambert solution",
-            "estimated_delta_v_km_s": hohmann["total_delta_v_km_s"],
-            "specified_transfer_time_days": tof / 86400,
-            "origin_radius_km": float(r1_mag),
-            "target_radius_km": float(r2_mag),
-        }
+        return LambertTransferResult(
+            estimated_delta_v_km_s=hohmann.total_delta_v_km_s,
+            specified_transfer_time_days=tof / 86400,
+            origin_radius_km=r1_mag,
+            target_radius_km=r2_mag,
+        )

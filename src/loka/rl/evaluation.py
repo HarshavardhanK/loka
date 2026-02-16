@@ -6,11 +6,48 @@ transferable physics (novel altitudes, adversarial perturbations,
 delta-V efficiency) rather than memorised trajectories.
 """
 
-from typing import Any, Callable, Dict, List, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 import numpy as np
+from pydantic import BaseModel, Field
 
 from loka.envs.orbital_transfer import OrbitalTransferEnv
+
+
+# ── Pydantic result models ───────────────────────────────────────────
+
+
+class AltitudeResult(BaseModel):
+    """Evaluation result for a single altitude test condition."""
+
+    success_rate: float = Field(..., ge=0.0, le=1.0)
+    mean_dv_ratio: Optional[float] = Field(
+        None, description="Mean dv_agent / dv_hohmann (None if no successes)",
+    )
+
+
+class GeneralizationResult(BaseModel):
+    """Full result from :func:`evaluate_generalization`."""
+
+    altitude_tests: Dict[str, AltitudeResult] = Field(
+        default_factory=dict,
+        description="Keyed by 'LEO_{alt}km'",
+    )
+    adversarial_perturbation: float = Field(
+        ..., ge=0.0, le=1.0,
+        description="Success rate under mid-episode velocity kicks",
+    )
+
+
+class EfficiencyResult(BaseModel):
+    """Result from :func:`compute_dv_efficiency`."""
+
+    eta_mean: float = Field(0.0, description="Mean dv_hohmann / dv_agent")
+    eta_std: float = Field(0.0, description="Std of eta")
+    success_rate: float = Field(0.0, ge=0.0, le=1.0)
+
+
+# ── Agent protocol ───────────────────────────────────────────────────
 
 
 class AgentProtocol(Protocol):
@@ -21,12 +58,15 @@ class AgentProtocol(Protocol):
         ...
 
 
+# ── Evaluation functions ─────────────────────────────────────────────
+
+
 def evaluate_generalization(
     agent: AgentProtocol,
     env_class: type = OrbitalTransferEnv,
     n_episodes: int = 100,
     seed: int = 42,
-) -> Dict[str, Any]:
+) -> GeneralizationResult:
     """Run the full generalisation test battery.
 
     Parameters
@@ -42,11 +82,11 @@ def evaluate_generalization(
 
     Returns
     -------
-    dict
-        Nested results keyed by test name.
+    GeneralizationResult
+        Structured results with altitude tests and adversarial perturbation.
     """
-    results: Dict[str, Any] = {}
     rng = np.random.RandomState(seed)
+    altitude_tests: Dict[str, AltitudeResult] = {}
 
     # ── Test 1: Novel altitudes ───────────────────────────────────────
     for alt in [300, 500, 600, 800]:
@@ -63,10 +103,10 @@ def evaluate_generalization(
             successes.append(info.get("success", False))
             if info.get("dv_hohmann", 0) > 0:
                 dv_ratios.append(info["dv_total"] / info["dv_hohmann"])
-        results[f"LEO_{alt}km"] = {
-            "success_rate": float(np.mean(successes)),
-            "mean_dv_ratio": float(np.mean(dv_ratios)) if dv_ratios else None,
-        }
+        altitude_tests[f"LEO_{alt}km"] = AltitudeResult(
+            success_rate=float(np.mean(successes)),
+            mean_dv_ratio=float(np.mean(dv_ratios)) if dv_ratios else None,
+        )
 
     # ── Test 2: Adversarial perturbation ──────────────────────────────
     env = env_class()
@@ -84,17 +124,21 @@ def evaluate_generalization(
                 env.state[3] += rng.normal(0, 0.1)  # vy kick
             done = term or trunc
         perturb_successes.append(info.get("success", False))
-    results["adversarial_perturbation"] = float(np.mean(perturb_successes))
 
-    return results
+    return GeneralizationResult(
+        altitude_tests=altitude_tests,
+        adversarial_perturbation=float(np.mean(perturb_successes)),
+    )
 
 
-def compute_dv_efficiency(agent: AgentProtocol, n_episodes: int = 50) -> Dict[str, float]:
+def compute_dv_efficiency(
+    agent: AgentProtocol, n_episodes: int = 50,
+) -> EfficiencyResult:
     """Compute delta-V efficiency statistics.
 
     Returns
     -------
-    dict
+    EfficiencyResult
         ``eta_mean``, ``eta_std``, ``success_rate`` where
         ``eta = dv_hohmann / dv_agent``.
     """
@@ -112,8 +156,9 @@ def compute_dv_efficiency(agent: AgentProtocol, n_episodes: int = 50) -> Dict[st
         successes.append(success)
         if success and info["dv_total"] > 0:
             etas.append(info["dv_hohmann"] / info["dv_total"])
-    return {
-        "eta_mean": float(np.mean(etas)) if etas else 0.0,
-        "eta_std": float(np.std(etas)) if etas else 0.0,
-        "success_rate": float(np.mean(successes)),
-    }
+
+    return EfficiencyResult(
+        eta_mean=float(np.mean(etas)) if etas else 0.0,
+        eta_std=float(np.std(etas)) if etas else 0.0,
+        success_rate=float(np.mean(successes)),
+    )
