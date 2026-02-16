@@ -36,12 +36,37 @@ Images will be pushed to: `ghcr.io/<username>/loka:latest`
 
 Images will be pushed to: `docker.io/<username>/loka:latest`
 
-## Images Produced
+## Image Tagging (Automated)
 
-| Image Tag                              | When Built             | Dockerfile          |
-|----------------------------------------|------------------------|---------------------|
-| `<registry>/<user>/loka:latest`        | Every push to `main`   | `docker/Dockerfile` |
-| `<registry>/<user>/loka:<sha>`         | Every push to `main`   | `docker/Dockerfile` |
-| `<registry>/<user>/loka:v1.0.0`        | Git tag `v1.0.0`       | `docker/Dockerfile` |
-| `<registry>/<user>/loka:rl-train`      | Every push to `main`   | `docker/Dockerfile.rl` |
-| `<registry>/<user>/loka:rl-<sha>`      | Every push to `main`   | `docker/Dockerfile.rl` |
+Tags are generated automatically by `docker/metadata-action` — no manual versioning needed.
+
+### How to release a new version
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+That's it. The pipeline will produce all the tags below.
+
+### Production image (`docker/Dockerfile`)
+
+| You push...         | Image tags created                          |
+|----------------------|---------------------------------------------|
+| Commit to `main`     | `:main`, `:sha-abc1234`, `:latest`          |
+| Tag `v1.2.3`         | `:1.2.3`, `:1.2`, `:1`, `:latest`           |
+| Tag `v0.3.0-rc.1`    | `:0.3.0-rc.1`                               |
+
+### RL training image (`docker/Dockerfile.rl`)
+
+| You push...         | Image tags created                          |
+|----------------------|---------------------------------------------|
+| Commit to `main`     | `:rl-main`, `:rl-sha-abc1234`, `:rl-train`  |
+| Tag `v1.2.3`         | `:rl-1.2.3`, `:rl-1.2`                      |
+
+### Referencing images
+
+In your SLURM scripts or K8s manifests, use:
+- **Stable (recommended):** `<registry>/<user>/loka:rl-train` — always points to latest main
+- **Pinned:** `<registry>/<user>/loka:rl-1.2.3` — locked to a specific release
+- **Debugging:** `<registry>/<user>/loka:rl-sha-abc1234` — exact commit
