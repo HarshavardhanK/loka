@@ -1,0 +1,156 @@
+# =============================================================================
+# Loka CI/CD — Test, Build, Push
+# =============================================================================
+# Triggers:
+#   - Every push/PR to main: run tests
+#   - Pushes to main + version tags: build & push Docker images
+#
+# Required GitHub Secrets (set in Settings → Secrets → Actions):
+#   DOCKER_REGISTRY   – e.g. "ghcr.io" or "docker.io"
+#   DOCKER_USERNAME   – registry username (for ghcr.io, use your GitHub username)
+#   DOCKER_PASSWORD   – registry token  (for ghcr.io, use a PAT with packages:write)
+#
+# Images pushed:
+#   $DOCKER_REGISTRY/$DOCKER_USERNAME/loka:latest
+#   $DOCKER_REGISTRY/$DOCKER_USERNAME/loka:rl-train
+#   $DOCKER_REGISTRY/$DOCKER_USERNAME/loka:<git-sha>
+# =============================================================================
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+env:
+  # Fallback defaults — overridden by secrets when available
+  IMAGE_NAME: loka
+
+# ─── Jobs ──────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ── 1. Lint & Test ─────────────────────────────────────────────────
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install core deps + test deps (skip GPU-only packages)
+          pip install -e ".[dev]"
+          # Install RL deps that work on CPU (skip vllm/verl/ray — GPU only)
+          pip install gymnasium numba pandas pyarrow
+
+      - name: Lint with ruff
+        run: ruff check src/ tests/
+
+      - name: Run unit tests
+        run: pytest tests/test_coordinates.py tests/test_tools.py tests/test_orbital_env.py -v
+
+      - name: Run integration tests
+        run: pytest tests/test_integration.py -v
+
+  # ── 2. Build & Push Docker Images ──────────────────────────────────
+  docker:
+    name: Build & Push Docker
+    needs: test
+    runs-on: ubuntu-latest
+    # Only build on pushes to main or version tags (not PRs)
+    if: github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          REGISTRY="${{ secrets.DOCKER_REGISTRY }}"
+          USERNAME="${{ secrets.DOCKER_USERNAME }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA::7}"
+          REF_NAME="${{ github.ref_name }}"
+
+          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "username=${USERNAME}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ref_name=${REF_NAME}" >> "$GITHUB_OUTPUT"
+
+          # Build tag list
+          BASE="${REGISTRY}/${USERNAME}/loka"
+          TAGS="${BASE}:${SHORT_SHA}"
+
+          if [ "$REF_NAME" = "main" ]; then
+            TAGS="${TAGS},${BASE}:latest"
+          fi
+
+          # If this is a version tag (v*), add it
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAGS="${TAGS},${BASE}:${REF_NAME}"
+          fi
+
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "tags_rl=${BASE}:rl-train,${BASE}:rl-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      # ── Production image (multi-stage Dockerfile, production target) ──
+      - name: Build & push production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      # ── RL training image (Dockerfile.rl) ──
+      - name: Build & push RL training image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.rl
+          push: true
+          tags: ${{ steps.meta.outputs.tags_rl }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
