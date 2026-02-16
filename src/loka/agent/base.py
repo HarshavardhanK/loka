@@ -5,8 +5,8 @@ This module provides the main LokaAgent class that orchestrates
 multi-step reasoning for celestial navigation and trajectory planning.
 """
 
-from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
+from typing import Any
 
 import torch
 from pydantic import BaseModel
@@ -16,12 +16,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 class MissionResult(BaseModel):
     """Result of a mission planning request."""
 
-    trajectory: Dict[str, Any]
+    trajectory: dict[str, Any]
     delta_v: float  # km/s
     transfer_time: float  # days
     departure_date: datetime
     arrival_date: datetime
-    waypoints: List[Dict[str, Any]]
+    waypoints: list[dict[str, Any]]
     fuel_mass_ratio: float
     success: bool
     reasoning: str
@@ -32,8 +32,8 @@ class EphemerisResult(BaseModel):
 
     body: str
     epoch: datetime
-    position: Tuple[float, float, float]  # km in ICRS
-    velocity: Tuple[float, float, float]  # km/s in ICRS
+    position: tuple[float, float, float]  # km in ICRS
+    velocity: tuple[float, float, float]  # km/s in ICRS
     frame: str
 
 
@@ -59,7 +59,7 @@ class LokaAgent:
         self,
         model: AutoModelForCausalLM,
         tokenizer: AutoTokenizer,
-        device: Optional[str] = None,
+        device: str | None = None,
     ):
         """
         Initialize LokaAgent with a model and tokenizer.
@@ -82,7 +82,7 @@ class LokaAgent:
     def from_pretrained(
         cls,
         model_name_or_path: str,
-        device: Optional[str] = None,
+        device: str | None = None,
         **kwargs,
     ) -> "LokaAgent":
         """
@@ -113,9 +113,9 @@ class LokaAgent:
         self,
         origin: str,
         destination: str,
-        departure_window: Tuple[str, str],
+        departure_window: tuple[str, str],
         optimize_for: str = "fuel",
-        constraints: Optional[Dict[str, Any]] = None,
+        constraints: dict[str, Any] | None = None,
     ) -> MissionResult:
         """
         Plan an interplanetary mission.
@@ -160,10 +160,10 @@ class LokaAgent:
 
     def compute_transfer(
         self,
-        origin_state: Dict[str, Any],
-        target_state: Dict[str, Any],
+        origin_state: dict[str, Any],
+        target_state: dict[str, Any],
         transfer_type: str = "hohmann",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Compute a transfer trajectory between two states.
 
@@ -181,7 +181,7 @@ class LokaAgent:
     def chat(
         self,
         message: str,
-        history: Optional[List[Dict[str, str]]] = None,
+        history: list[dict[str, str]] | None = None,
     ) -> str:
         """
         Conversational interface for astrophysics questions.

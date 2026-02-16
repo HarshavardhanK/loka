@@ -21,13 +21,13 @@ This module adds **Loka-specific** metrics on top:
 from __future__ import annotations
 
 import logging
-import time
 import threading
+import time
 from collections import defaultdict
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from loka.rl.checkpoint import CheckpointManager
@@ -50,13 +50,13 @@ class SampleMetrics(BaseModel):
     parse_method: str = "fallback"  # xml_json | bare_json | regex | fallback
 
     # Orbital mechanics (from extra_info)
-    success: Optional[bool] = None
-    final_a_km: Optional[float] = None
-    final_e: Optional[float] = None
-    dv_total_kms: Optional[float] = None
-    dv_hohmann_kms: Optional[float] = None
-    mass_ratio: Optional[float] = None
-    steps_used: Optional[int] = None
+    success: bool | None = None
+    final_a_km: float | None = None
+    final_e: float | None = None
+    dv_total_kms: float | None = None
+    dv_hohmann_kms: float | None = None
+    mass_ratio: float | None = None
+    steps_used: int | None = None
 
     # Response stats
     response_length: int = 0
@@ -92,7 +92,7 @@ class MetricsTracker:
         self,
         flush_every: int = 256,
         enabled: bool = True,
-        checkpoint_manager: Optional[CheckpointManager] = None,
+        checkpoint_manager: CheckpointManager | None = None,
         save_freq: int = 50,
     ):
         self._flush_every = flush_every
@@ -256,12 +256,12 @@ class MetricsTracker:
 
 # ── Module-level singleton ───────────────────────────────────────────
 
-_tracker: Optional[MetricsTracker] = None
+_tracker: MetricsTracker | None = None
 
 
 def get_tracker(
     flush_every: int = 256,
-    checkpoint_manager: Optional[CheckpointManager] = None,
+    checkpoint_manager: CheckpointManager | None = None,
     save_freq: int = 50,
 ) -> MetricsTracker:
     """Get or create the global MetricsTracker singleton.
@@ -288,8 +288,8 @@ def get_tracker(
 def init_wandb_run(
     project: str = "orbital_rl",
     experiment: str = "leo_to_geo_grpo",
-    config: Optional[dict] = None,
-    tags: Optional[list[str]] = None,
+    config: dict | None = None,
+    tags: list[str] | None = None,
 ) -> None:
     """Initialize a wandb run with Loka-specific metadata.
 

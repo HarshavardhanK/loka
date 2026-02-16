@@ -6,13 +6,12 @@ Delegates Hohmann calculations to :mod:`loka.astro.hohmann` instead
 of reimplementing the math.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Literal
 
 import numpy as np
 from pydantic import BaseModel, Field
 
 from loka.tools.base import Tool, ToolResult
-
 
 # ── Pydantic result models ───────────────────────────────────────────
 
@@ -58,11 +57,11 @@ class TrajectoryTool(Tool):
 
     class Parameters(BaseModel):
         transfer_type: Literal["hohmann", "lambert"]
-        origin_position: List[float]
-        target_position: List[float]
-        origin_velocity: Optional[List[float]] = None
-        target_velocity: Optional[List[float]] = None
-        transfer_time: Optional[float] = None
+        origin_position: list[float]
+        target_position: list[float]
+        origin_velocity: list[float] | None = None
+        target_velocity: list[float] | None = None
+        transfer_time: float | None = None
         central_body: str = "sun"
 
     # Standard gravitational parameters (km^3/s^2)

@@ -4,12 +4,11 @@ Ephemeris query tool for Loka agent.
 Provides celestial body position and velocity queries.
 """
 
-from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-from loka.tools.base import Tool, ToolResult
 from loka.astro.ephemeris import EphemerisManager
+from loka.tools.base import Tool, ToolResult
 
 
 class EphemerisTool(Tool):

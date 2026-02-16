@@ -9,10 +9,9 @@ malformed model outputs (booleans, nulls, lists, wrong types, etc.).
 """
 
 import re
-from typing import List, Dict, Tuple
 
 import numpy as np
-from pydantic import BaseModel, field_validator, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 # ── System prompt (DeepSeek-R1 think/action paradigm) ─────────────────
 
@@ -110,7 +109,7 @@ class OrbitalObservationWrapper:
         step: int,
         max_steps: int,
         dv_used: float = 0.0,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """Build chat-format message list for Verl tokenisation.
 
         Parameters
@@ -195,7 +194,7 @@ class ActionParser:
     }
     DEFAULT = np.array([0.0, 0.0], dtype=np.float32)
 
-    def parse(self, text: str) -> Tuple[np.ndarray, float, str]:
+    def parse(self, text: str) -> tuple[np.ndarray, float, str]:
         """Parse *text* and return ``(action, format_reward, method)``.
 
         Parameters
@@ -227,7 +226,7 @@ class ActionParser:
                 return cmd.to_action(), 0.5, "bare_json"
 
         # Strategy 3: regex field extraction → pydantic validation
-        vals: Dict[str, float] = {}
+        vals: dict[str, float] = {}
         for key, pat in self._FIELD_RE.items():
             fm = pat.search(text)
             if fm:

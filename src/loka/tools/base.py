@@ -8,7 +8,7 @@ is derived automatically from the Pydantic model.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -18,7 +18,7 @@ class ToolResult(BaseModel):
 
     success: bool
     output: Any = None
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class Tool(ABC):
@@ -53,7 +53,7 @@ class Tool(ABC):
         """
         pass
 
-    def to_function_schema(self) -> Dict[str, Any]:
+    def to_function_schema(self) -> dict[str, Any]:
         """
         Convert tool to OpenAI-style function schema.
 
@@ -82,26 +82,26 @@ class ToolRegistry:
     """
 
     def __init__(self):
-        self._tools: Dict[str, Tool] = {}
+        self._tools: dict[str, Tool] = {}
 
     def register(self, tool: Tool) -> None:
         """Register a tool."""
         self._tools[tool.name] = tool
 
-    def register_class(self, tool_class: Type[Tool]) -> None:
+    def register_class(self, tool_class: type[Tool]) -> None:
         """Register a tool by its class."""
         tool = tool_class()
         self.register(tool)
 
-    def get(self, name: str) -> Optional[Tool]:
+    def get(self, name: str) -> Tool | None:
         """Get a tool by name."""
         return self._tools.get(name)
 
-    def list_tools(self) -> List[str]:
+    def list_tools(self) -> list[str]:
         """List all registered tool names."""
         return list(self._tools.keys())
 
-    def get_all_schemas(self) -> List[Dict[str, Any]]:
+    def get_all_schemas(self) -> list[dict[str, Any]]:
         """Get function schemas for all registered tools."""
         return [tool.to_function_schema() for tool in self._tools.values()]
 

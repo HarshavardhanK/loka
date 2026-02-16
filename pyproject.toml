@@ -97,7 +97,15 @@ include = '\.pyi?$'
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+ignore = [
+    "N803",   # argument name should be lowercase (physics: G, R_E, MU, …)
+    "N806",   # variable in function should be lowercase (physics conventions)
+    "N815",   # mixedCase variable in class scope (physics conventions)
+    "E501",   # line too long — handled by formatter
+]
 
 [tool.mypy]
 python_version = "3.10"

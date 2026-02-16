@@ -41,7 +41,7 @@ import logging
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -59,9 +59,9 @@ class CheckpointMeta(BaseModel):
     timestamp: float = Field(..., description="Unix timestamp when saved")
 
     # Ranking metrics (populated when available)
-    success_rate: Optional[float] = Field(None, ge=0.0, le=1.0)
-    dv_efficiency: Optional[float] = Field(None, ge=0.0)
-    mean_reward: Optional[float] = None
+    success_rate: float | None = Field(None, ge=0.0, le=1.0)
+    dv_efficiency: float | None = Field(None, ge=0.0)
+    mean_reward: float | None = None
 
     def score(self) -> tuple[float, float, float]:
         """Return a composite ranking tuple (higher is better).

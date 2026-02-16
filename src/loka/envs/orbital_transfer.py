@@ -7,11 +7,10 @@ All units are km, km/s, kg, and seconds.
 """
 
 import gymnasium as gym
-from gymnasium import spaces
 import numpy as np
+from gymnasium import spaces
 from numba import njit
 from pydantic import BaseModel, Field
-
 
 # ── Numba-accelerated dynamics for rollout speed ──────────────────────
 

@@ -19,7 +19,6 @@ from pydantic import BaseModel, ValidationError
 from loka.rl.bridge import ActionParser
 from loka.rl.metrics import SampleMetrics, get_tracker
 
-
 # ── Pydantic model for ground-truth payload ──────────────────────────
 
 class _GroundTruth(BaseModel):

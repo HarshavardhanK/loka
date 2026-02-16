@@ -15,13 +15,11 @@ Test groups
 """
 
 import json
-import math
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
-
 
 # =====================================================================
 # 1. Env → Bridge → Reward : Full observation-to-score loop
@@ -34,7 +32,7 @@ class TestEnvBridgeRewardLoop:
     def test_obs_to_text_to_score_well_formed(self):
         """A well-formed LLM response based on real env obs scores positively."""
         from loka.envs.orbital_transfer import OrbitalTransferEnv
-        from loka.rl.bridge import OrbitalObservationWrapper, ActionParser
+        from loka.rl.bridge import ActionParser, OrbitalObservationWrapper
         from loka.rl.reward import compute_score
 
         env = OrbitalTransferEnv()
@@ -129,7 +127,7 @@ class TestEnvBridgeRewardLoop:
     def test_build_messages_roundtrip(self):
         """build_messages produces valid chat structure from env observations."""
         from loka.envs.orbital_transfer import OrbitalTransferEnv
-        from loka.rl.bridge import OrbitalObservationWrapper, SYSTEM_PROMPT
+        from loka.rl.bridge import SYSTEM_PROMPT, OrbitalObservationWrapper
 
         env = OrbitalTransferEnv()
         obs, _ = env.reset(seed=12)
@@ -177,7 +175,7 @@ class TestActionParserDrivesEnv:
 
     def test_fallback_action_is_coast(self):
         """When parser falls back, the action is coast (zero thrust)."""
-        from loka.envs.orbital_transfer import OrbitalTransferEnv, _state_to_elements
+        from loka.envs.orbital_transfer import OrbitalTransferEnv
         from loka.rl.bridge import ActionParser
 
         env = OrbitalTransferEnv()
@@ -201,7 +199,7 @@ class TestActionParserDrivesEnv:
         env = OrbitalTransferEnv(config={"max_steps": 50})
         obs, _ = env.reset(seed=99)
         parser = ActionParser()
-        wrapper = OrbitalObservationWrapper(
+        OrbitalObservationWrapper(
             a_target=env.a_target, dv_hohmann=env.dv_hohmann,
         )
 
@@ -234,8 +232,8 @@ class TestHohmannEnvConsistency:
 
     def test_dv_hohmann_matches_env(self):
         """hohmann_baseline() and env.dv_hohmann use the same physics."""
-        from loka.envs.orbital_transfer import OrbitalTransferEnv
         from loka.astro.hohmann import hohmann_baseline
+        from loka.envs.orbital_transfer import OrbitalTransferEnv
 
         env = OrbitalTransferEnv()
         baseline = hohmann_baseline(alt_leo_km=400.0)
@@ -245,8 +243,8 @@ class TestHohmannEnvConsistency:
 
     def test_hohmann_at_different_altitudes(self):
         """Env and baseline agree across multiple LEO altitudes."""
-        from loka.envs.orbital_transfer import OrbitalTransferEnv
         from loka.astro.hohmann import hohmann_baseline
+        from loka.envs.orbital_transfer import OrbitalTransferEnv
 
         for alt in [200, 400, 600, 800, 1000]:
             env = OrbitalTransferEnv(config={"alt_leo": alt})
@@ -325,7 +323,7 @@ class TestTrainingDataGeneration:
     def test_parquet_roundtrip(self):
         """Write rows to parquet and read them back with correct types."""
         pd = pytest.importorskip("pandas")
-        pa = pytest.importorskip("pyarrow")
+        pytest.importorskip("pyarrow")
 
         from loka.envs.orbital_transfer import OrbitalTransferEnv
         from loka.rl.bridge import OrbitalObservationWrapper
@@ -413,7 +411,6 @@ class TestCurriculumEnvIntegration:
     def test_curriculum_stages_use_valid_env_config_keys(self):
         """All stage config keys are accepted by OrbitalTransferEnv."""
         from loka.envs.orbital_transfer import OrbitalTransferEnv
-        from loka.rl.curriculum import CurriculumScheduler
 
         # Env should accept alt_leo without error
         for alt in [200, 400, 600, 800]:
@@ -468,8 +465,8 @@ class TestEvaluationHarness:
 
     def test_evaluate_generalization_coast_agent(self):
         """Coast agent completes the eval battery (all episodes time out)."""
-        from loka.rl.evaluation import evaluate_generalization
         from loka.envs.orbital_transfer import OrbitalTransferEnv
+        from loka.rl.evaluation import evaluate_generalization
 
         agent = self.CoastAgent()
         # Use tiny episode length so tests run fast
@@ -489,8 +486,8 @@ class TestEvaluationHarness:
 
     def test_compute_dv_efficiency_dummy(self):
         """compute_dv_efficiency runs with a dummy agent on a short env."""
-        from loka.rl.evaluation import compute_dv_efficiency
         from loka.envs.orbital_transfer import OrbitalTransferEnv
+        from loka.rl.evaluation import compute_dv_efficiency
 
         agent = self.CoastAgent()
         # Monkey-patch OrbitalTransferEnv temporarily for fast episodes
@@ -513,8 +510,8 @@ class TestEvaluationHarness:
 
     def test_eval_results_structure(self):
         """Evaluation results have the expected structure for each test."""
-        from loka.rl.evaluation import evaluate_generalization
         from loka.envs.orbital_transfer import OrbitalTransferEnv
+        from loka.rl.evaluation import evaluate_generalization
 
         agent = self.RandomAgent(seed=42)
         results = evaluate_generalization(

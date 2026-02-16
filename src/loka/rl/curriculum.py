@@ -13,10 +13,8 @@ Stage 3 — Plane changes & perturbations (70–100%)
     Extended to 3-D with inclination; optional J2 drag (future).
 """
 
-from typing import Optional, Tuple
 
 from pydantic import BaseModel, Field, model_validator
-
 
 # ── Pydantic models for structured stage definitions ─────────────────
 
@@ -24,9 +22,9 @@ from pydantic import BaseModel, Field, model_validator
 class StageConfig(BaseModel):
     """Physical parameters for a single curriculum stage."""
 
-    a_range: Tuple[float, float] = Field(..., description="Semi-major axis error range")
-    e_range: Tuple[float, float] = Field(..., description="Eccentricity range")
-    incl_range: Optional[Tuple[float, float]] = Field(
+    a_range: tuple[float, float] = Field(..., description="Semi-major axis error range")
+    e_range: tuple[float, float] = Field(..., description="Eccentricity range")
+    incl_range: tuple[float, float] | None = Field(
         None, description="Inclination range in degrees (Stage 3 only)",
     )
 
@@ -76,7 +74,7 @@ class CurriculumScheduler:
         "plane_change": StageMix(circularize=0.05, hohmann=0.25, plane_change=0.70),
     }
 
-    def __init__(self, stage_boundaries: Tuple[float, float] = (0.30, 0.70)):
+    def __init__(self, stage_boundaries: tuple[float, float] = (0.30, 0.70)):
         b1, b2 = stage_boundaries
         if not (0.0 < b1 < b2 < 1.0):
             raise ValueError(

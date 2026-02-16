@@ -6,13 +6,12 @@ transferable physics (novel altitudes, adversarial perturbations,
 delta-V efficiency) rather than memorised trajectories.
 """
 
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Protocol
 
 import numpy as np
 from pydantic import BaseModel, Field
 
 from loka.envs.orbital_transfer import OrbitalTransferEnv
-
 
 # ── Pydantic result models ───────────────────────────────────────────
 
@@ -21,7 +20,7 @@ class AltitudeResult(BaseModel):
     """Evaluation result for a single altitude test condition."""
 
     success_rate: float = Field(..., ge=0.0, le=1.0)
-    mean_dv_ratio: Optional[float] = Field(
+    mean_dv_ratio: float | None = Field(
         None, description="Mean dv_agent / dv_hohmann (None if no successes)",
     )
 
@@ -29,7 +28,7 @@ class AltitudeResult(BaseModel):
 class GeneralizationResult(BaseModel):
     """Full result from :func:`evaluate_generalization`."""
 
-    altitude_tests: Dict[str, AltitudeResult] = Field(
+    altitude_tests: dict[str, AltitudeResult] = Field(
         default_factory=dict,
         description="Keyed by 'LEO_{alt}km'",
     )
@@ -86,13 +85,13 @@ def evaluate_generalization(
         Structured results with altitude tests and adversarial perturbation.
     """
     rng = np.random.RandomState(seed)
-    altitude_tests: Dict[str, AltitudeResult] = {}
+    altitude_tests: dict[str, AltitudeResult] = {}
 
     # ── Test 1: Novel altitudes ───────────────────────────────────────
     for alt in [300, 500, 600, 800]:
         env = env_class(config={"alt_leo": alt})
-        successes: List[bool] = []
-        dv_ratios: List[float] = []
+        successes: list[bool] = []
+        dv_ratios: list[float] = []
         for ep in range(n_episodes):
             obs, _ = env.reset(seed=int(rng.randint(0, 2**31)))
             done = False
@@ -110,7 +109,7 @@ def evaluate_generalization(
 
     # ── Test 2: Adversarial perturbation ──────────────────────────────
     env = env_class()
-    perturb_successes: List[bool] = []
+    perturb_successes: list[bool] = []
     for ep in range(n_episodes):
         obs, _ = env.reset(seed=int(rng.randint(0, 2**31)))
         done, step = False, 0
@@ -143,8 +142,8 @@ def compute_dv_efficiency(
         ``eta = dv_hohmann / dv_agent``.
     """
     env = OrbitalTransferEnv()
-    etas: List[float] = []
-    successes: List[bool] = []
+    etas: list[float] = []
+    successes: list[bool] = []
     for _ in range(n_episodes):
         obs, _ = env.reset()
         done = False

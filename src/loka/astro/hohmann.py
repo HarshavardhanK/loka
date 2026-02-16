@@ -7,7 +7,8 @@ agent trajectory is measured.
 
 import numpy as np
 from astropy import units as u
-from astropy.constants import GM_earth, R_earth as R_EARTH_ASTROPY
+from astropy.constants import GM_earth
+from astropy.constants import R_earth as R_EARTH_ASTROPY
 from pydantic import BaseModel
 
 

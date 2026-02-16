@@ -8,9 +8,8 @@ Covers:
 """
 
 import json
-import numpy as np
-import pytest
 
+import numpy as np
 
 # =====================================================================
 # OrbitalTransferEnv
@@ -413,8 +412,8 @@ class TestMetricsTracker:
 
     def test_compute_score_records_metrics(self):
         """compute_score should record to the global tracker."""
-        from loka.rl.reward import compute_score
         from loka.rl import metrics as metrics_mod
+        from loka.rl.reward import compute_score
 
         # Replace the global tracker with a test one
         old_tracker = metrics_mod._tracker
@@ -455,7 +454,7 @@ class TestCheckpointManager:
 
     def _make_ckpt_dir(self, tmp_path, steps, metrics_list=None):
         """Helper: create fake checkpoint directories."""
-        from loka.rl.checkpoint import CheckpointManager, CheckpointConfig
+        from loka.rl.checkpoint import CheckpointConfig, CheckpointManager
         ckpt_dir = tmp_path / "checkpoints"
         ckpt_dir.mkdir()
 
@@ -496,7 +495,7 @@ class TestCheckpointManager:
         """With 5 checkpoints and no metrics, should keep the last 2."""
         mgr, ckpt_dir = self._make_ckpt_dir(tmp_path, [50, 100, 150, 200, 250])
 
-        pruned = mgr.prune()
+        mgr.prune()
         remaining = [c.step for c in mgr.registered]
 
         # Last 2: 200, 250
@@ -525,7 +524,7 @@ class TestCheckpointManager:
             metrics,
         )
 
-        pruned = mgr.prune()
+        mgr.prune()
         remaining_steps = {c.step for c in mgr.registered}
 
         # Must keep last-2: 350, 400
@@ -570,7 +569,7 @@ class TestCheckpointManager:
         assert c2.score() > c1.score()
 
     def test_register_and_prune_convenience(self, tmp_path):
-        from loka.rl.checkpoint import CheckpointManager, CheckpointConfig
+        from loka.rl.checkpoint import CheckpointConfig, CheckpointManager
         ckpt_dir = tmp_path / "ckpts"
         ckpt_dir.mkdir()
 
@@ -608,7 +607,7 @@ class TestCheckpointManager:
 
     def test_metadata_persists_on_disk(self, tmp_path):
         """Metadata files should survive a manager restart."""
-        from loka.rl.checkpoint import CheckpointManager, CheckpointConfig
+        from loka.rl.checkpoint import CheckpointConfig, CheckpointManager
         ckpt_dir = tmp_path / "ckpts"
         ckpt_dir.mkdir()
         (ckpt_dir / "global_step_50").mkdir()
