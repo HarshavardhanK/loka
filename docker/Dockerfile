@@ -38,8 +38,8 @@ WORKDIR /app
 # Copy environment file
 COPY environment.yml .
 
-# Create conda environment
-RUN conda env create -f environment.yml && \
+# Create conda environment (libmamba solver is faster & more robust)
+RUN conda env create -f environment.yml --solver=libmamba && \
     conda clean -afy
 
 # Activate environment in shell
