@@ -94,6 +94,13 @@ dmypy.json
 *.swo
 *~
 
+# Node / frontend
+node_modules/
+*.tsbuildinfo
+*.tsbuildinfo.*
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
 # OS
 .DS_Store
 Thumbs.db
