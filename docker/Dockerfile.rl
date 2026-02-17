@@ -14,8 +14,23 @@ FROM ${BASE_IMAGE}
 
 USER root
 
+# --- Ensure Python 3 and pip are available -----------------------------------
+# The bare nvidia/cuda images don't include Python. Skip if already present.
+RUN if ! command -v pip >/dev/null 2>&1; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends python3 python3-pip python3-dev && \
+        ln -sf /usr/bin/python3 /usr/bin/python && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# --- Install PyTorch (skip if base image already provides it) ----------------
+RUN pip install --no-cache-dir --break-system-packages \
+        torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 \
+        --index-url https://download.pytorch.org/whl/cu126 2>/dev/null \
+    || true
+
 # --- Install non-conflicting packages normally ------------------------------
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --break-system-packages \
     "gymnasium>=1.0" \
     "astropy>=6.0,<7" \
     "jplephem>=2.18" \
@@ -28,13 +43,14 @@ RUN pip install --no-cache-dir \
 # Letting pip resolve verl/vllm deps causes resolution-too-deep against
 # the base image's newer versions.  We install them --no-deps and then
 # add only the genuinely missing sub-dependencies below.
-RUN pip install --no-cache-dir --no-deps verl vllm
+RUN pip install --no-cache-dir --break-system-packages --no-deps verl vllm
 
 # --- Install missing sub-dependencies of verl / vllm -----------------------
 # flashinfer-python is omitted — vllm bundles its own attention kernels,
 # and flashinfer requires CUDA compilation that is impractical under QEMU.
 # It will be installed on the cluster at runtime if needed.
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --break-system-packages \
+    "transformers>=4.56,<5" \
     codetiming \
     hydra-core \
     omegaconf \
@@ -59,13 +75,28 @@ RUN pip install --no-cache-dir \
     protobuf \
     tabulate \
     tensordict \
+    torchdata \
+    peft \
+    openai-harmony \
+    llguidance \
+    xgrammar \
+    "lm-format-enforcer==0.11.3" \
+    prometheus-fastapi-instrumentator \
+    model-hosting-container-standards \
+    pybase64 \
+    sentencepiece \
+    setproctitle \
+    einops \
+    cachetools \
+    cbor2 \
+    ijson \
     "lark>=1.2.2" \
     "prometheus-client"
 
 # --- Copy loka source and install in-place ----------------------------------
 WORKDIR /code/loka
 COPY . .
-RUN pip install --no-cache-dir --no-deps -e .
+RUN pip install --no-cache-dir --break-system-packages --no-deps -e .
 
 # --- Environment for multi-node GRPO ----------------------------------------
 ENV CUDA_DEVICE_MAX_CONNECTIONS=1
