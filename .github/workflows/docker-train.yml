@@ -86,5 +86,4 @@ jobs:
           cache-from: type=gha,scope=rl
           cache-to: type=gha,mode=max,scope=rl
           platforms: linux/amd64
-          build-args: |
-            BASE_IMAGE=${{ github.event.inputs.base_image || '' }}
+          build-args: ${{ github.event.inputs.base_image && format('BASE_IMAGE={0}', github.event.inputs.base_image) || '' }}
