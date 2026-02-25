@@ -202,3 +202,23 @@ Primary coordinate frames (via astropy):
 - [Astropy Coordinates](https://docs.astropy.org/en/stable/coordinates/)
 - [JPL SPICE](https://naif.jpl.nasa.gov/naif/)
 - [Orbital Mechanics for Engineering Students](https://www.elsevier.com/books/orbital-mechanics-for-engineering-students/curtis/978-0-08-102133-0)
+
+## Cursor Cloud specific instructions
+
+### NumPy / Astropy compatibility
+
+The VM's system-level numpy (at `/usr/local/lib/python3.12/dist-packages/`) may be too new for `astropy<7`. The update script pins `numpy>=1.26,<2.1` (matching `environment.yml`) to avoid the `np.in1d` removal in numpy 2.1+. If you see `AttributeError: module 'numpy' has no attribute 'in1d'`, re-run the update script or `pip install "numpy>=1.26,<2.1"`.
+
+### Running services
+
+- **Python backend (library)**: No server to start. All tests run in-process via `pytest`. See the Testing section in this file for exact commands.
+- **Frontend**: `cd frontend && npm run dev` starts the Vite dev server on port 5173. The frontend runs in mock mode by default (no backend needed).
+- **Pre-commit hook**: Already installed via `./scripts/install-hooks.sh` in the update script. Every commit triggers `ruff check` + `pytest` on unit and integration tests.
+
+### Quick verification
+
+```bash
+ruff check src/ tests/                      # lint
+pytest tests/ -v                            # all tests (unit + integration)
+cd frontend && npm run build                # frontend type-check + build
+```
