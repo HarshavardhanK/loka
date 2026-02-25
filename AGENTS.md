@@ -205,6 +205,10 @@ Primary coordinate frames (via astropy):
 
 ## Cursor Cloud specific instructions
 
+### `python` symlink
+
+The VM only ships `python3`; the pre-commit hook (`.githooks/pre-commit`) invokes `python`. The update script creates `sudo ln -sf /usr/bin/python3 /usr/local/bin/python` to fix this.
+
 ### NumPy / Astropy compatibility
 
 The VM's system-level numpy (at `/usr/local/lib/python3.12/dist-packages/`) may be too new for `astropy<7`. The update script pins `numpy>=1.26,<2.1` (matching `environment.yml`) to avoid the `np.in1d` removal in numpy 2.1+. If you see `AttributeError: module 'numpy' has no attribute 'in1d'`, re-run the update script or `pip install "numpy>=1.26,<2.1"`.
