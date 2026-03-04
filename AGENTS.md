@@ -120,15 +120,67 @@ python scripts/download_ephemeris.py --target de440s
 
 #### Training
 
-Training runs on SLURM cluster or Kubernetes. Key files:
+Training runs on a Slurm cluster (preferred) or Kubernetes. The base model
+is `Qwen/Qwen2.5-7B-Instruct`, trained with GRPO via Verl on multi-GPU
+nodes.
+
+Key files:
 - `configs/grpo_config.yaml` - GRPO training hyperparameters
 - `configs/train_config.yaml` - Base model training hyperparameters
-- `scripts/train_grpo.slurm` - GRPO job submission (generic)
-- `scripts/train_grpo_native.slurm` - GRPO on native SLURM workers
-- `scripts/train_grpo_pyxis.slurm` - GRPO via Pyxis container
-- `k8s/training-job-rl.yaml` - Kubernetes GRPO training job
-- Kubeconfig: set via `KUBECONFIG` environment variable (not committed to repo)
-- Model: `Qwen/Qwen2.5-7B-Instruct`
+- `scripts/train_grpo_pyxis.slurm` - GRPO via Pyxis/Enroot container (primary)
+- `scripts/train_grpo_native.slurm` - GRPO on native Slurm workers
+- `scripts/train_grpo.slurm` - GRPO job submission (generic / module-load)
+- `scripts/smoke_test_pyxis.slurm` - Container + GPU + import smoke test
+- `scripts/e2e_test.sh` - Full pipeline e2e test (tiny data, 1 epoch)
+- `scripts/generate_training_data.py` - Verl-format parquet data generator
+- `k8s/training-job-rl.yaml` - Kubernetes GRPO training job (alternative)
+
+#### Slurm + Pyxis/Enroot
+
+The preferred deployment method uses **Pyxis** (Slurm spank plugin) with
+**Enroot** to run containerized GPU jobs. This avoids dependency hell on
+the host and guarantees reproducible environments.
+
+**Container image syntax** — the `#` separates registry from path. Because
+`#` is a comment character in `#SBATCH` directives, always pass the image
+on the `sbatch` CLI:
+
+```bash
+sbatch --container-image="ghcr.io#user/repo:tag" \
+       --container-mounts=/shared:/shared \
+       --container-writable \
+       --no-container-entrypoint \
+       script.slurm
+```
+
+**Enroot credentials** must be placed on each worker node (not just the
+login node) at `~/.config/enroot/.credentials`:
+
+```
+machine ghcr.io login <user> password <token>
+```
+
+**Topology** — if workers are missing from `scontrol show topology`, run
+`scontrol reconfigure` to reload `/etc/slurm/topology.conf`. Drained nodes
+can be resumed with `scontrol update NodeName=X State=RESUME`.
+
+**Known environment quirks:**
+- `ROCR_VISIBLE_DEVICES` (AMD ROCm) may be set by the base image; `unset` it
+  before running Verl to avoid CUDA conflict
+- `flash-attn` may not be installed; use `sdpa` attention instead
+- Qwen2.5-7B has a large embedding layer; set
+  `rollout.update_weights_bucket_megabytes=4096`
+- Start Ray with `--include-dashboard=false` if dashboard deps are missing
+
+**Workflow:**
+1. Build and push the RL Docker image via GitHub Actions
+2. Sync source code to shared NFS on the cluster
+3. Generate training data (`scripts/generate_training_data.py`)
+4. Run smoke test → e2e test → full training
+5. Set `WANDB_API_KEY` to enable W&B logging
+
+See `docs/DEPLOYMENT.md` (gitignored) for cluster-specific details,
+credentials, and operational runbooks.
 
 ### Dependencies
 
@@ -171,10 +223,15 @@ for full secret setup instructions.
 | `src/loka/rl/checkpoint.py` | Hybrid checkpoint manager (last-N + best-K) |
 | `configs/grpo_config.yaml` | GRPO training configuration |
 | `configs/train_config.yaml` | Base model training configuration |
+| `scripts/train_grpo_pyxis.slurm` | Primary Slurm GRPO training script |
+| `scripts/e2e_test.sh` | End-to-end pipeline smoke test |
+| `scripts/generate_training_data.py` | Verl-format parquet data generator |
+| `docker/Dockerfile.rl` | RL training container image |
 | `k8s/deployment.yaml` | Kubernetes inference deployment |
 | `k8s/training-job-rl.yaml` | Kubernetes GRPO training job |
 | `.githooks/pre-commit` | Pre-commit hook (lint + tests) |
 | `.env` | Local credentials (gitignored) |
+| `docs/DEPLOYMENT.md` | Cluster-specific ops notes (gitignored) |
 
 ## Physical Constants
 
