@@ -10,6 +10,7 @@ Covers:
 import json
 
 import numpy as np
+import pytest
 
 # =====================================================================
 # OrbitalTransferEnv
@@ -301,6 +302,11 @@ class TestMetricsTracker:
         assert m.total_reward == 0.0
         assert m.parse_method == "fallback"
         assert m.success is None
+        assert m.termination_reason == "unknown"
+        assert m.thrust_frac is None
+        assert m.angle_norm is None
+        assert m.group_id is None
+        assert m.curriculum_stage is None
 
     def test_sample_metrics_with_values(self):
         from loka.rl.metrics import SampleMetrics
@@ -319,11 +325,20 @@ class TestMetricsTracker:
             response_length=120,
             has_think_tag=True,
             has_action_tag=True,
+            termination_reason="success",
+            thrust_frac=0.7,
+            angle_norm=0.03,
+            group_id="prompt_42",
+            curriculum_stage="hohmann",
         )
         assert m.total_reward == 0.75
         assert m.parse_method == "xml_json"
         assert m.success is True
         assert m.final_a_km == 42164.0
+        assert m.termination_reason == "success"
+        assert m.thrust_frac == 0.7
+        assert m.group_id == "prompt_42"
+        assert m.curriculum_stage == "hohmann"
 
     def test_tracker_record_and_summary(self):
         from loka.rl.metrics import MetricsTracker, SampleMetrics
@@ -399,6 +414,76 @@ class TestMetricsTracker:
         assert abs(summary["loka/orbital/steps_mean"] - 500.0) < 1e-6
         assert summary["loka/orbital/steps_max"] == 800
 
+    def test_tracker_termination_breakdown(self):
+        from loka.rl.metrics import MetricsTracker, SampleMetrics
+
+        tracker = MetricsTracker(flush_every=1000, enabled=True)
+        reasons = ["success", "crash", "crash", "fuel_exhausted", "timeout"]
+        for reason in reasons:
+            tracker.record(SampleMetrics(
+                total_reward=0.5 if reason == "success" else -0.3,
+                termination_reason=reason,
+            ))
+
+        summary = tracker.get_summary()
+        assert abs(summary["loka/termination/success_rate"] - 1 / 5) < 1e-6
+        assert abs(summary["loka/termination/crash_rate"] - 2 / 5) < 1e-6
+        assert abs(summary["loka/termination/fuel_exhausted_rate"] - 1 / 5) < 1e-6
+        assert abs(summary["loka/termination/timeout_rate"] - 1 / 5) < 1e-6
+        assert abs(summary["loka/termination/excessive_dv_rate"] - 0.0) < 1e-6
+
+    def test_tracker_grpo_group_variance(self):
+        from loka.rl.metrics import MetricsTracker, SampleMetrics
+
+        tracker = MetricsTracker(flush_every=1000, enabled=True)
+        # Group A: rewards [0.1, 0.9] — high intra-group variance
+        tracker.record(SampleMetrics(total_reward=0.1, group_id="A"))
+        tracker.record(SampleMetrics(total_reward=0.9, group_id="A"))
+        # Group B: rewards [0.5, 0.5] — zero variance
+        tracker.record(SampleMetrics(total_reward=0.5, group_id="B"))
+        tracker.record(SampleMetrics(total_reward=0.5, group_id="B"))
+
+        summary = tracker.get_summary()
+        assert summary["loka/grpo/n_groups"] == 2
+        assert abs(summary["loka/grpo/group_reward_mean"] - 0.5) < 1e-6
+        assert summary["loka/grpo/intra_group_std_max"] > 0.3
+        assert summary["loka/grpo/best_in_group_mean"] == pytest.approx(0.7, abs=0.01)
+        assert summary["loka/grpo/worst_in_group_mean"] == pytest.approx(0.3, abs=0.01)
+
+    def test_tracker_action_distribution(self):
+        from loka.rl.metrics import MetricsTracker, SampleMetrics
+
+        tracker = MetricsTracker(flush_every=1000, enabled=True)
+        # 3 samples: 2 thrusting, 1 coasting
+        tracker.record(SampleMetrics(thrust_frac=0.8, angle_norm=0.1))
+        tracker.record(SampleMetrics(thrust_frac=0.6, angle_norm=-0.5))
+        tracker.record(SampleMetrics(thrust_frac=0.0, angle_norm=0.0))
+
+        summary = tracker.get_summary()
+        assert abs(summary["loka/action/thrust_mean"] - (0.8 + 0.6 + 0.0) / 3) < 1e-6
+        assert abs(summary["loka/action/coast_rate"] - 1 / 3) < 1e-6
+        assert summary["loka/action/full_thrust_rate"] == 0.0
+
+    def test_tracker_curriculum_breakdown(self):
+        from loka.rl.metrics import MetricsTracker, SampleMetrics
+
+        tracker = MetricsTracker(flush_every=1000, enabled=True)
+        tracker.record(SampleMetrics(
+            total_reward=0.8, success=True, curriculum_stage="circularize",
+        ))
+        tracker.record(SampleMetrics(
+            total_reward=0.2, success=False, curriculum_stage="circularize",
+        ))
+        tracker.record(SampleMetrics(
+            total_reward=0.5, success=True, curriculum_stage="hohmann",
+        ))
+
+        summary = tracker.get_summary()
+        assert abs(summary["loka/curriculum/circularize_frac"] - 2 / 3) < 1e-6
+        assert abs(summary["loka/curriculum/hohmann_frac"] - 1 / 3) < 1e-6
+        assert abs(summary["loka/curriculum/circularize_success_rate"] - 0.5) < 1e-6
+        assert abs(summary["loka/curriculum/hohmann_success_rate"] - 1.0) < 1e-6
+
     def test_tracker_empty_summary(self):
         from loka.rl.metrics import MetricsTracker
         tracker = MetricsTracker(flush_every=1000, enabled=True)
@@ -415,7 +500,6 @@ class TestMetricsTracker:
         from loka.rl import metrics as metrics_mod
         from loka.rl.reward import compute_score
 
-        # Replace the global tracker with a test one
         old_tracker = metrics_mod._tracker
         test_tracker = metrics_mod.MetricsTracker(flush_every=10000, enabled=True)
         metrics_mod._tracker = test_tracker
@@ -432,6 +516,8 @@ class TestMetricsTracker:
                 "dv_total": 4.1,
                 "mass_ratio": 0.58,
                 "steps_used": 750,
+                "group_id": "prompt_7",
+                "curriculum_stage": "hohmann",
             })
 
             summary = test_tracker.get_summary()
@@ -441,6 +527,11 @@ class TestMetricsTracker:
             assert summary["loka/parse/xml_json_rate"] == 1.0
             assert summary["loka/orbital/success_rate"] == 1.0
             assert abs(summary["loka/orbital/final_a_mean_km"] - 42100.0) < 1
+            # New fields: termination, action, group, curriculum
+            assert summary["loka/termination/success_rate"] == 1.0
+            assert summary["loka/action/thrust_mean"] == pytest.approx(0.5, abs=0.01)
+            assert summary["loka/grpo/n_groups"] == 1
+            assert abs(summary["loka/curriculum/hohmann_frac"] - 1.0) < 1e-6
         finally:
             metrics_mod._tracker = old_tracker
 

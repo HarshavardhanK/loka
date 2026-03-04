@@ -117,6 +117,11 @@ def compute_score(
         has_action_tag=has_action,
     )
 
+    # Populate parsed action stats
+    if _action_arr is not None and len(_action_arr) >= 2:
+        sample.thrust_frac = float(np.clip(_action_arr[0], 0.0, 1.0))
+        sample.angle_norm = float(np.clip(_action_arr[1], -1.0, 1.0))
+
     # Extract orbital mechanics data from extra_info
     if extra_info:
         sample.success = extra_info.get("success")
@@ -126,7 +131,36 @@ def compute_score(
         sample.dv_hohmann_kms = extra_info.get("dv_hohmann", _gt.dv_hohmann)
         sample.mass_ratio = extra_info.get("mass_ratio")
         sample.steps_used = extra_info.get("steps_used")
+        sample.group_id = extra_info.get("group_id")
+        sample.curriculum_stage = extra_info.get("curriculum_stage")
+
+        # Determine termination reason
+        sample.termination_reason = _infer_termination(extra_info)
 
     tracker.record(sample)
 
     return total_reward
+
+
+def _infer_termination(info: dict) -> str:
+    """Infer the termination reason from environment info dict."""
+    if info.get("success"):
+        return "success"
+    reason = info.get("termination_reason")
+    if reason:
+        return reason
+    # Heuristic fallback from env info signals
+    r = info.get("r")
+    if r is not None and (r < 6571 or r > 384400):
+        return "crash"
+    if info.get("mass_ratio") is not None and info["mass_ratio"] < 0.05:
+        return "fuel_exhausted"
+    dv = info.get("dv_total", 0)
+    dv_h = info.get("dv_hohmann", 1)
+    if dv_h > 0 and dv > 2.0 * dv_h:
+        return "excessive_dv"
+    if info.get("truncated"):
+        return "timeout"
+    if info.get("success") is False:
+        return "crash"
+    return "unknown"
