@@ -41,51 +41,80 @@ Loka is a specialized small language model (SLM) trained for:
 
 ### Prerequisites
 
-- Python 3.11+
-- Conda (via miniforge recommended)
-- Docker (for containerized deployment)
-- kubectl (for Kubernetes deployment)
+- Python 3.10+ (3.11+ recommended for local dev)
+- Docker (for containerized training/deployment)
+- Access to a Slurm cluster with Pyxis/Enroot (for GPU training)
 
 ### Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/HarshavardhanK/loka.git
 cd loka
-
-# Create conda environment
-conda env create -f environment.yml
-conda activate loka
-
-# Install in development mode
 pip install -e ".[dev]"
+
+# Set up pre-commit hook
+./scripts/install-hooks.sh
 ```
 
-### Docker
+### Docker (RL Training Image)
+
+The RL training image is built via GitHub Actions (`docker-train.yml`) and
+published to GHCR. It includes PyTorch, vLLM, Verl, Ray, and all
+scientific dependencies on top of the Slurm worker base image.
 
 ```bash
-# Build the image
-docker build -t loka:latest -f docker/Dockerfile .
+# Trigger the build via GitHub Actions
+gh workflow run docker-train.yml
 
-# Run container
-docker run -it --gpus all loka:latest
-```
-
-### Kubernetes Deployment
-
-```bash
-# Deploy to cluster
-kubectl apply -f k8s/
+# Or build locally
+docker build -t loka:rl -f docker/Dockerfile.rl .
 ```
 
 ## Training
 
-Training is performed on a SLURM cluster. See [Training Guide](docs/training.md) for details.
+Loka uses **GRPO** (Group Relative Policy Optimization) via
+[Verl](https://github.com/volcengine/verl) to train `Qwen/Qwen2.5-7B-Instruct`
+on a custom orbital mechanics environment (`OrbitalTransferEnv`).
+
+### Slurm + Pyxis (Primary)
+
+The preferred method runs containerized training on a Slurm cluster using
+Pyxis/Enroot. The `#` in the image URI separates registry from path and
+must be passed on the CLI (not in `#SBATCH` directives):
 
 ```bash
-# Submit training job
-sbatch scripts/train.slurm
+# 1. Generate training data (runs inside the container)
+sbatch --container-image="ghcr.io#harshavardhank/loka:rl-fix-docker-rl-base-image" \
+       --container-mounts=/data:/data --container-writable --no-container-entrypoint \
+       --wrap="python3 scripts/generate_training_data.py --n-train 10000 --n-val 1000"
+
+# 2. Smoke test (GPU + imports + reward function)
+sbatch --container-image="ghcr.io#harshavardhank/loka:rl-fix-docker-rl-base-image" \
+       scripts/smoke_test_pyxis.slurm
+
+# 3. End-to-end test (tiny data, 1 epoch, no W&B)
+sbatch --container-image="ghcr.io#harshavardhank/loka:rl-fix-docker-rl-base-image" \
+       --gres=gpu:h100:8 --mem=900G --nodes=1 --cpus-per-task=104 \
+       scripts/e2e_test.sh
+
+# 4. Full training (with W&B)
+WANDB_API_KEY=<key> sbatch \
+       --container-image="ghcr.io#harshavardhank/loka:rl-fix-docker-rl-base-image" \
+       scripts/train_grpo_pyxis.slurm
 ```
+
+### Kubernetes (Alternative)
+
+```bash
+kubectl apply -f k8s/training-job-rl.yaml
+```
+
+### W&B Metrics
+
+When `WANDB_API_KEY` is set, training logs comprehensive metrics to
+Weights & Biases including reward decomposition, GRPO group variance,
+termination analysis, action distributions, and curriculum stage breakdowns.
+See `src/loka/rl/metrics.py` for details.
 
 ## Usage
 
@@ -112,30 +141,36 @@ print(f"Transfer time: {result.transfer_time} days")
 
 ```
 loka/
-├── src/loka/           # Core package
+├── src/loka/
 │   ├── agent/          # Agentic reasoning
 │   ├── astro/          # Astrophysics utilities
+│   ├── envs/           # Gymnasium environments (OrbitalTransferEnv)
 │   ├── model/          # LLM architecture
+│   ├── rl/             # RL training (bridge, reward, metrics, checkpoint, curriculum)
 │   └── tools/          # Agent tools
 ├── configs/            # Training & inference configs
-├── data/               # Datasets and ephemeris
-├── docker/             # Docker configurations
+├── docker/             # Dockerfiles (Dockerfile.rl for training)
 ├── k8s/                # Kubernetes manifests
-├── models/             # Saved model checkpoints
-├── notebooks/          # Jupyter notebooks
-├── scripts/            # Training and utility scripts
+├── scripts/            # Slurm jobs, data gen, smoke tests
+│   ├── train_grpo_pyxis.slurm   # Primary training script
+│   ├── smoke_test_pyxis.slurm   # Container smoke test
+│   ├── e2e_test.sh              # Full pipeline e2e test
+│   └── generate_training_data.py
+├── .github/workflows/  # CI/CD and Docker build
 └── tests/              # Test suite
 ```
 
 ## Dependencies
 
-Core dependencies managed via conda/pip:
+Core dependencies managed via pip (`pyproject.toml`):
 
-- **astropy**: Astronomical calculations and coordinate systems
-- **jplephem**: JPL ephemeris access
-- **scipy**: Numerical optimization
-- **torch**: Deep learning framework
-- **transformers**: Model architecture base
+- **astropy** / **jplephem** / **scipy** — Astronomical calculations
+- **torch** / **transformers** — Model architecture and training
+- **vllm** — Fast LLM inference (rollouts)
+- **verl** — GRPO / PPO trainer
+- **ray** — Distributed orchestration
+- **gymnasium** / **numba** — RL environment
+- **wandb** — Experiment tracking
 
 ## Contributing
 

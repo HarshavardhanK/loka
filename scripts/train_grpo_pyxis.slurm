@@ -1,19 +1,19 @@
 #!/bin/bash
 #SBATCH --job-name=loka-grpo
-#SBATCH --output=logs/grpo_%j.out
-#SBATCH --error=logs/grpo_%j.err
+#SBATCH --output=/data/users/harsha/loka/logs/grpo_%j.out
+#SBATCH --error=/data/users/harsha/loka/logs/grpo_%j.err
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=96
-#SBATCH --gres=gpu:8
+#SBATCH --cpus-per-task=104
+#SBATCH --gres=gpu:h100:8
 #SBATCH --mem=900G
 #SBATCH --time=72:00:00
 #SBATCH --partition=main
 #
 # --- Pyxis / enroot container ---
-# Set LOKA_CONTAINER_IMAGE in your environment or override here
-#SBATCH --container-image=${LOKA_CONTAINER_IMAGE:-ghcr.io/harshavardhank/loka:rl-train}
-#SBATCH --container-mounts=/scratch:/scratch
+# Pass --container-image on the sbatch CLI to avoid '#' comment parsing:
+#   sbatch --container-image="ghcr.io#harshavardhank/loka:rl-fix-docker-rl-base-image" scripts/train_grpo_pyxis.slurm
+#SBATCH --container-mounts=/data:/data
 #SBATCH --container-writable
 #SBATCH --no-container-entrypoint
 
@@ -32,17 +32,22 @@ echo "Start time   : $(date)"
 echo "=============================================="
 
 # ── Paths ────────────────────────────────────────────────────────────
-LOKA_ROOT="${LOKA_ROOT:-/scratch/${USER}/loka}"
+LOKA_ROOT="/data/users/harsha/loka"
 export LOKA_DATA_DIR="${LOKA_ROOT}/data"
 export LOKA_MODEL_DIR="${LOKA_ROOT}/checkpoints"
 export LOKA_CACHE_DIR="${LOKA_ROOT}/cache"
 export HF_HOME="${LOKA_CACHE_DIR}/huggingface"
 
-# WANDB_API_KEY: set via environment before submission
-export WANDB_API_KEY="${WANDB_API_KEY:?Set WANDB_API_KEY before submitting this job}"
-export WANDB_PROJECT="${WANDB_PROJECT:-orbital_rl}"
+# W&B: use key from env if set, otherwise skip wandb logging
+LOGGER="console"
+if [ -n "${WANDB_API_KEY:-}" ]; then
+    export WANDB_PROJECT="${WANDB_PROJECT:-orbital_rl}"
+    LOGGER="wandb"
+    echo "W&B logging ENABLED (project=${WANDB_PROJECT})"
+else
+    echo "W&B logging DISABLED (set WANDB_API_KEY to enable)"
+fi
 
-# Make source importable
 export PYTHONPATH="${LOKA_ROOT}/src:${PYTHONPATH:-}"
 
 # ── NCCL / CUDA / vLLM ──────────────────────────────────────────────
@@ -52,6 +57,8 @@ export NCCL_IB_DISABLE=0
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 export VLLM_ATTENTION_BACKEND=FLASH_ATTN
 export NCCL_DEBUG=INFO
+
+unset ROCR_VISIBLE_DEVICES 2>/dev/null || true
 
 mkdir -p "${LOKA_DATA_DIR}/orbital" "${LOKA_MODEL_DIR}" "${LOKA_CACHE_DIR}" "${LOKA_ROOT}/logs"
 
@@ -68,34 +75,27 @@ fi
 echo "Training data:"
 ls -lh "${LOKA_DATA_DIR}/orbital/"
 
-# ── Resolve node addresses ───────────────────────────────────────────
+# ── Resolve node addresses ────────────────────────────────────────────
 NODELIST=($(scontrol show hostnames "${SLURM_NODELIST}"))
 HEAD_NODE=${NODELIST[0]}
-# Get the head node's IP address
-HEAD_ADDR=$(srun --nodes=1 --ntasks=1 -w "${HEAD_NODE}" hostname -i 2>/dev/null | awk '{print $1}')
+HEAD_ADDR=$(hostname -i | awk '{print $1}')
 RAY_PORT=6379
 
 echo "Head node: ${HEAD_NODE} (${HEAD_ADDR}:${RAY_PORT})"
 
-# ── Start Ray cluster ───────────────────────────────────────────────
-# Head
-srun --nodes=1 --ntasks=1 -w "${HEAD_NODE}" --gres=gpu:8 \
-    ray start --head --port=${RAY_PORT} \
-    --num-cpus=96 --num-gpus=8 \
-    --dashboard-host=0.0.0.0 --include-dashboard=true --block &
+# ── Start Ray cluster ────────────────────────────────────────────────
+ray start --head --port=${RAY_PORT} \
+    --num-cpus=104 --num-gpus=8 \
+    --include-dashboard=false
+sleep 15
 
-echo "Ray Dashboard: http://${HEAD_ADDR}:8265"
-sleep 30  # give head time to bind
-
-# Workers
 for node in "${NODELIST[@]:1}"; do
     echo "Starting Ray worker on ${node} ..."
-    srun --nodes=1 --ntasks=1 -w "${node}" --gres=gpu:8 \
+    srun --nodes=1 --ntasks=1 -w "${node}" --gres=gpu:h100:8 \
         ray start --address="${HEAD_ADDR}:${RAY_PORT}" \
-        --num-cpus=96 --num-gpus=8 --block &
+        --num-cpus=104 --num-gpus=8 --block &
 done
-
-sleep 30  # let workers join
+sleep 20
 
 echo "Ray cluster status:"
 ray status || true
@@ -123,9 +123,9 @@ python3 -m verl.trainer.main_ppo \
     \
     actor_rollout_ref.hybrid_engine=True \
     actor_rollout_ref.model.path=Qwen/Qwen2.5-7B-Instruct \
-    actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2 \
+    +actor_rollout_ref.model.override_config.attn_implementation=sdpa \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
-    actor_rollout_ref.model.use_remove_padding=True \
+    actor_rollout_ref.model.use_remove_padding=False \
     \
     actor_rollout_ref.actor.strategy=fsdp2 \
     actor_rollout_ref.actor.optim.lr=1e-6 \
@@ -156,6 +156,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.temperature=1.0 \
     actor_rollout_ref.rollout.top_p=0.95 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=16 \
+    actor_rollout_ref.rollout.checkpoint_engine.update_weights_bucket_megabytes=4096 \
     \
     reward_model.enable=False \
     custom_reward_function.path="${LOKA_ROOT}/src/loka/rl/reward.py" \
@@ -165,7 +166,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=2 \
     trainer.project_name=orbital_rl \
     trainer.experiment_name=leo_to_geo_grpo \
-    trainer.logger=wandb \
+    trainer.logger=${LOGGER} \
     trainer.save_freq=50 \
     trainer.val_before_train=True \
     trainer.total_epochs=3 \
