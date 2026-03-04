@@ -1,20 +1,26 @@
 # =============================================================================
-# Loka RL Training — Thin overlay on the SLURM worker image
+# Loka RL Training — Overlay on cluster worker base image
 # =============================================================================
-# The cluster worker image already ships:
-#   PyTorch 2.10+cu129, Ray 2.53, Transformers 5.1, Accelerate 1.12,
-#   numba, pandas, pyarrow, wandb, datasets, CUDA 12.9
+# The cluster worker base image ships PyTorch, Ray, Transformers, CUDA, etc.
+# We overlay RL-specific packages (verl, vllm) and the loka source tree.
 #
-# We only add the RL-specific packages and the loka source tree.
+# BASE_IMAGE must be provided via --build-arg at build time.
 # =============================================================================
 
-# Base image: override via --build-arg if your cluster uses a different worker image
-ARG BASE_IMAGE=nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 USER root
 
-# --- Install non-conflicting packages normally ------------------------------
+# --- Downgrade torch to 2.9.1 (vllm 0.15.1 ABI requirement) ----------------
+RUN pip install --no-cache-dir \
+    torch==2.9.1+cu126 torchvision==0.24.1+cu126 torchaudio==2.9.1+cu126 \
+    --index-url https://download.pytorch.org/whl/cu126
+
+# --- Downgrade transformers <5 (verl requirement) ----------------------------
+RUN pip install --no-cache-dir "transformers>=4.56,<5"
+
+# --- Install non-conflicting science packages --------------------------------
 RUN pip install --no-cache-dir \
     "gymnasium>=1.0" \
     "astropy>=6.0,<7" \
@@ -23,17 +29,15 @@ RUN pip install --no-cache-dir \
     "pyyaml>=6.0" \
     "packaging>=25.0"
 
-# --- Install verl + vllm WITHOUT transitive deps ---------------------------
-# The base image already has torch, transformers, huggingface_hub, ray, etc.
+# --- Install verl + vllm WITHOUT transitive deps ----------------------------
 # Letting pip resolve verl/vllm deps causes resolution-too-deep against
-# the base image's newer versions.  We install them --no-deps and then
-# add only the genuinely missing sub-dependencies below.
-RUN pip install --no-cache-dir --no-deps verl vllm
+# the base image's packages. Install --no-deps, then add missing sub-deps.
+# verl 0.8.0.dev0 from main is needed for vllm 0.15.1 API compatibility.
+RUN pip install --no-cache-dir --no-deps \
+    "git+https://github.com/volcengine/verl.git@main" \
+    vllm==0.15.1
 
-# --- Install missing sub-dependencies of verl / vllm -----------------------
-# flashinfer-python is omitted — vllm bundles its own attention kernels,
-# and flashinfer requires CUDA compilation that is impractical under QEMU.
-# It will be installed on the cluster at runtime if needed.
+# --- Install missing sub-dependencies of verl / vllm ------------------------
 RUN pip install --no-cache-dir \
     codetiming \
     hydra-core \
@@ -59,10 +63,25 @@ RUN pip install --no-cache-dir \
     protobuf \
     tabulate \
     tensordict \
+    torchdata \
+    peft \
+    openai-harmony \
+    llguidance \
+    xgrammar \
+    "lm-format-enforcer==0.11.3" \
+    prometheus-fastapi-instrumentator \
+    model-hosting-container-standards \
+    pybase64 \
+    sentencepiece \
+    setproctitle \
+    einops \
+    cachetools \
+    cbor2 \
+    ijson \
     "lark>=1.2.2" \
     "prometheus-client"
 
-# --- Copy loka source and install in-place ----------------------------------
+# --- Copy loka source and install in-place -----------------------------------
 WORKDIR /code/loka
 COPY . .
 RUN pip install --no-cache-dir --no-deps -e .

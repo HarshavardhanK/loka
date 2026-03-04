@@ -26,9 +26,11 @@ classifiers = [
 keywords = ["astrophysics", "navigation", "trajectory", "llm", "agent", "astropy"]
 
 dependencies = [
-    "numpy>=1.24",
+    "numpy>=1.24,<2.4; python_version<'3.11'",
+    "numpy>=1.24; python_version>='3.11'",
     "scipy>=1.13",
-    "astropy>=6.0,<7",
+    "astropy>=7.0; python_version>='3.11'",
+    "astropy>=6.0,<7; python_version<'3.11'",
     "jplephem>=2.18",
     "torch>=2.0",
     "transformers>=4.40",
