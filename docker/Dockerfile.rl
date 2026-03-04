@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir "numba==0.61.2"
 # --- Install non-conflicting science packages --------------------------------
 RUN pip install --no-cache-dir \
     "gymnasium>=1.0" \
-    "astropy>=7.0" \
+    "astropy>=6.0,<7" \
     "jplephem>=2.18" \
     "pyyaml>=6.0" \
     "packaging>=25.0"
